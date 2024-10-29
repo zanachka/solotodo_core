@@ -1,8 +1,9 @@
 from elasticsearch_dsl import Document, Join, MetaField
+from django.conf import settings
 
 
 class EsProductEntities(Document):
-    product_relationships = Join(relations={'product': 'entity'})
+    product_relationships = Join(relations={"product": "entity"})
 
     @classmethod
     def _matches(cls, hit):
@@ -11,33 +12,31 @@ class EsProductEntities(Document):
         return False
 
     class Meta:
-        dynamic = MetaField('strict')
-        dynamic_templates = MetaField([
-            {
-                "product_specs_keyword_fields": {
-                    "path_match": "specs.*",
-                    "match_mapping_type": "string",
-                    "mapping": {
-                        "type": "keyword"
-                    }
+        dynamic = MetaField("strict")
+        dynamic_templates = MetaField(
+            [
+                {
+                    "product_specs_keyword_fields": {
+                        "path_match": "specs.*",
+                        "match_mapping_type": "string",
+                        "mapping": {"type": "keyword"},
+                    },
                 },
-            },
-            {
-                "product_specs_nested_fields": {
-                    "path_match": "specs.*",
-                    "match_mapping_type": "object",
-                    "mapping": {
-                        "type": "nested"
-                    }
+                {
+                    "product_specs_nested_fields": {
+                        "path_match": "specs.*",
+                        "match_mapping_type": "object",
+                        "mapping": {"type": "nested"},
+                    },
                 },
-            },
-        ])
+            ]
+        )
 
     class Index:
-        name = 'product_entities'
+        name = settings.ES_PRODUCT_ENTITIES_INDEX
         settings = {
-            'index.mapping.total_fields.limit': 10000,
-            'index.max_result_window': 200000,
+            "index.mapping.total_fields.limit": 10000,
+            "index.max_result_window": 200000,
             # Update this value if solotodo grows to more than 1000000 products
-            'index.max_terms_count': 1000000
+            "index.max_terms_count": 1000000,
         }
