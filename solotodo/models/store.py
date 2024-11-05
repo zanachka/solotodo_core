@@ -169,25 +169,6 @@ class Store(models.Model):
             update_log=update_log,
         )
 
-    def update_pricing_from_json(self, json_data, update_log=None):
-        assert self.last_activation is not None
-
-        categories = Category.objects.filter(
-            storescraper_name__in=json_data["categories"]
-        )
-
-        products = [
-            StorescraperProduct.deserialize(product)
-            for product in json_data["products"]
-        ]
-
-        self.update_with_scraped_products(
-            categories,
-            products,
-            json_data["discovery_urls_without_products"],
-            update_log=update_log,
-        )
-
     def update_with_scraped_products(
         self,
         categories,
@@ -203,7 +184,7 @@ class Store(models.Model):
         scraped_products_dict = iterable_to_dict(scraped_products, "key")
         print("2")
         entities_to_be_updated = self.entity_set.filter(
-            Q(category__in=categories) | Q(key__in=scraped_products_dict.keys())
+            Q(scraped_category__in=categories) | Q(key__in=scraped_products_dict.keys())
         ).select_related()
         print("3")
 
@@ -284,27 +265,6 @@ class Store(models.Model):
 
         if original_categories:
             sanitized_categories &= original_categories
-
-        # If we have entities whose categories differ between our backend
-        # and the store itself add their categories manually to the list of
-        # categories to be updated if the original categories are not
-        # given
-        # Example:
-        # 1. "Sanitize all the categories from AbcDin"
-        # (original_categories = None)
-        # 2. Load the default categories from AbcDin [Television, etc...]
-        # 3. We may have an entity from AbcDin with mismatched category.
-        # For example they had a Processor in the Notebook section
-        # Normally this entity would never be updated as Processor is not
-        # part of AbcDin scraper, so add "Processor" to the list of categories
-        if original_categories is None:
-            extra_category_ids = self.entity_set.exclude(
-                category__in=sanitized_categories
-            ).values("category")
-            extra_categories = Category.objects.filter(
-                pk__in=[e["category"] for e in extra_category_ids]
-            )
-            sanitized_categories |= extra_categories
 
         return sanitized_categories
 
