@@ -203,6 +203,14 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False)
     def with_staff_actions(self, request):
+        user = request.user
+
+        if not user.is_authenticated:
+            raise PermissionDenied
+
+        if not user.is_staff and not user.is_superuser:
+            raise PermissionDenied
+
         users = self.get_queryset()
         users_with_staff_actions = users.filter(is_staff=True)
         payload = UserSerializer(
@@ -219,7 +227,11 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
 
         user = self.get_object()
 
-        if user != request_user and not request_user.is_superuser:
+        if (
+            user != request_user
+            and not request_user.is_superuser
+            and not request_user.has_perm("solotodo.is_staff_manager")
+        ):
             raise PermissionDenied
 
         if not user.is_staff:
@@ -251,7 +263,11 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
 
         user = self.get_object()
 
-        if user != request_user and not request_user.is_superuser:
+        if (
+            user != request_user
+            and not request_user.is_superuser
+            and not request_user.has_perm("solotodo.is_staff_manager")
+        ):
             raise PermissionDenied
 
         if not user.is_staff:
