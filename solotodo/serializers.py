@@ -472,6 +472,7 @@ class EntityHistoryWithNestedEntitySerializer(serializers.HyperlinkedModelSerial
 
 class EntityStaffInfoSerializer(serializers.HyperlinkedModelSerializer):
     last_association_user = UserSerializer()
+    last_staff_access_user = UserSerializer()
 
     class Meta:
         model = Entity
