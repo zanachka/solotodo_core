@@ -411,7 +411,7 @@ class Store(models.Model):
             Entity.objects.select_related(
                 "active_registry", "product__instance_model", "category"
             )
-            .filter(store=store, is_visible=True)
+            .filter(store=store)
             .get_available()
         )
         output = io.BytesIO()
@@ -478,12 +478,18 @@ class Store(models.Model):
                 )
                 col += 1
                 worksheet.write(row, col, entity.product_id)
+            elif entity.is_visible:
+                worksheet.write(row, col, "N/A")
+                col += 1
+                worksheet.write(row, col, "N/A")
+                col += 1
+                worksheet.write(row, col, "N/A")
             else:
-                worksheet.write(row, col, "N/A")
+                worksheet.write(row, col, "No relevante")
                 col += 1
-                worksheet.write(row, col, "N/A")
+                worksheet.write(row, col, "No relevante")
                 col += 1
-                worksheet.write(row, col, "N/A")
+                worksheet.write(row, col, "No relevante")
             row += 1
 
         workbook.close()
