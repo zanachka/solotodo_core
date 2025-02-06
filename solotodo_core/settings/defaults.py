@@ -16,6 +16,7 @@ import os
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 from datetime import timedelta
 from decimal import Decimal
+import pillow_avif  # noqa
 
 
 from elasticsearch import Elasticsearch
@@ -208,7 +209,14 @@ STATIC_URL = "/static/"
 
 AUTH_USER_MODEL = "solotodo.SoloTodoUser"
 
-DEFAULT_FILE_STORAGE = "solotodo_core.s3utils.MediaRootS3Boto3Storage"
+STORAGES = {
+    "default": {
+        "BACKEND": "solotodo_core.s3utils.MediaRootS3Boto3Storage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
 
 AUTHENTICATION_BACKENDS = (
     "django.contrib.auth.backends.ModelBackend",
