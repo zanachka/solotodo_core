@@ -67,6 +67,8 @@ class StaffActivityForm(forms.Form):
         result = defaultdict(lambda: 0)
         staff = self.cleaned_data["staff"]
         disqus_username = settings.STAFF_EXTERNAL_SERVICES_IDS[staff.id]["Disqus"]
+        if not disqus_username:
+            return {}
         cursor = None
         done = False
         while not done:
@@ -97,10 +99,19 @@ class StaffActivityForm(forms.Form):
     def get_zendesk_data(self):
         from django.conf import settings
 
+        # Zendesk automatically closes solved tickets after 96 hours
+        # https://solotodo.zendesk.com/agent/admin/automations/15985946438555
+        # so when a staff marks a ticket as solved 96 hours later it is "updated" automatically as "closed"
+        # Because of this our query must extend the range of the end date to include tickets that may have been updated
+        # after the end_date
+        zendesk_offset_hours = 96
+
         start_date = self.cleaned_data["start_date"]
-        end_date = self.cleaned_data["end_date"]
+        end_date = self.cleaned_data["end_date"] + timedelta(hours=zendesk_offset_hours)
         staff = self.cleaned_data["staff"]
         zendesk_id = settings.STAFF_EXTERNAL_SERVICES_IDS[staff.id]["Zendesk"]
+        if not zendesk_id:
+            return {}
         next_page_url = f"https://solotodo.zendesk.com/api/v2/search.json?per_page=100&query=type:ticket status>=solved assignee:{zendesk_id} updated>={start_date.isoformat()} updated<={end_date.isoformat()}"
         result = defaultdict(lambda: 0)
 
@@ -115,8 +126,17 @@ class StaffActivityForm(forms.Form):
             # Parse the response
             data = response.json()
             for entry in data["results"]:
-                timestamp = parser.parse(entry["updated_at"]).date()
-                result[timestamp] += 1
+                updated_at = parser.parse(entry["updated_at"])
+
+                # Zendesk closes solved tickets after 96 hours
+                # https://solotodo.zendesk.com/agent/admin/automations/15985946438555
+                # so when a staff marks a ticket as solved 96 hours later it is "updated" as closed
+                if entry["status"] == "closed":
+                    print("closed!")
+                    updated_at -= timedelta(hours=zendesk_offset_hours)
+                timestamp = updated_at.date()
+                if timestamp >= start_date and timestamp <= end_date:
+                    result[timestamp] += 1
 
             if data["next_page"]:
                 next_page_url = data["next_page"]
