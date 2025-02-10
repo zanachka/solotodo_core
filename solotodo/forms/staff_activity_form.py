@@ -4,17 +4,16 @@ from datetime import timedelta
 import requests
 from dateutil import parser
 from django import forms
-from django.core.exceptions import ValidationError
 from django.db.models import Count
 from django.db.models.functions import TruncDate
+from django_filters.fields import IsoDateTimeRangeField
 from requests.auth import HTTPBasicAuth
 
 from solotodo.models import Entity, Product
 
 
 class StaffActivityForm(forms.Form):
-    start_date = forms.DateField()
-    end_date = forms.DateField()
+    timestamp = IsoDateTimeRangeField()
     staff = forms.ModelChoiceField(queryset=None)
 
     def __init__(self, *args, **kwargs):
@@ -27,13 +26,6 @@ class StaffActivityForm(forms.Form):
         )
         self.fields["staff"].queryset = staff_choices
 
-    def clean_end_date(self):
-        start_date = self.cleaned_data["start_date"]
-        end_date = self.cleaned_data["end_date"]
-        if end_date < start_date:
-            raise ValidationError("End date must be greater than start date")
-        return end_date
-
     def get_data(self):
         result = []
 
@@ -42,8 +34,12 @@ class StaffActivityForm(forms.Form):
         associated_entities_data = self.get_associated_entities_data()
         created_products_data = self.get_created_products_data()
 
-        date_iterator = self.cleaned_data["start_date"]
-        while date_iterator <= self.cleaned_data["end_date"]:
+        timestamp = self.cleaned_data["timestamp"]
+        start_date = timestamp.start.date()
+        end_date = timestamp.stop.date()
+
+        date_iterator = start_date
+        while date_iterator <= end_date:
             disqus_comments = disqus_data.get(date_iterator, 0)
             zendesk_solved_tickets = zendesk_data.get(date_iterator, 0)
             associated_entities = associated_entities_data.get(date_iterator, 0)
@@ -64,6 +60,10 @@ class StaffActivityForm(forms.Form):
     def get_disqus_data(self):
         from django.conf import settings
 
+        timestamp = self.cleaned_data["timestamp"]
+        start_date = timestamp.start.date()
+        end_date = timestamp.stop.date()
+
         result = defaultdict(lambda: 0)
         staff = self.cleaned_data["staff"]
         disqus_username = settings.STAFF_EXTERNAL_SERVICES_IDS[staff.id]["Disqus"]
@@ -76,7 +76,7 @@ class StaffActivityForm(forms.Form):
             endpoint = "https://disqus.com/api/3.0/users/listPosts.json?api_key={}&user=username:{}&since={}T00:00:00&limit=100&order=desc".format(
                 settings.DISQUS_KEY,
                 disqus_username,
-                self.cleaned_data["end_date"].isoformat(),
+                end_date.isoformat(),
             )
             if cursor:
                 endpoint += "&cursor={}".format(cursor)
@@ -85,7 +85,7 @@ class StaffActivityForm(forms.Form):
                 if entry["forum"] != "solotodo3":
                     continue
                 timestamp = parser.parse(entry["createdAt"]).date()
-                if timestamp < self.cleaned_data["start_date"]:
+                if timestamp < start_date:
                     done = True
                     break
                 result[timestamp] += 1
@@ -106,8 +106,10 @@ class StaffActivityForm(forms.Form):
         # after the end_date
         zendesk_offset_hours = 96
 
-        start_date = self.cleaned_data["start_date"]
-        end_date = self.cleaned_data["end_date"] + timedelta(hours=zendesk_offset_hours)
+        timestamp = self.cleaned_data["timestamp"]
+        start_date = timestamp.start.date()
+        end_date = (timestamp.stop + timedelta(hours=zendesk_offset_hours)).date()
+
         staff = self.cleaned_data["staff"]
         zendesk_id = settings.STAFF_EXTERNAL_SERVICES_IDS[staff.id]["Zendesk"]
         if not zendesk_id:
@@ -132,7 +134,6 @@ class StaffActivityForm(forms.Form):
                 # https://solotodo.zendesk.com/agent/admin/automations/15985946438555
                 # so when a staff marks a ticket as solved 96 hours later it is "updated" as closed
                 if entry["status"] == "closed":
-                    print("closed!")
                     updated_at -= timedelta(hours=zendesk_offset_hours)
                 timestamp = updated_at.date()
                 if timestamp >= start_date and timestamp <= end_date:
@@ -146,10 +147,14 @@ class StaffActivityForm(forms.Form):
         return result
 
     def get_associated_entities_data(self):
+        timestamp = self.cleaned_data["timestamp"]
+        start_date = timestamp.start.date()
+        end_date = timestamp.stop.date()
+
         associated_entities = (
             Entity.objects.filter(
-                last_association__gte=self.cleaned_data["start_date"],
-                last_association__lte=self.cleaned_data["end_date"],
+                last_association__gte=start_date,
+                last_association__lte=end_date,
                 last_association_user=self.cleaned_data["staff"],
             )
             .annotate(date=TruncDate("last_association"))
@@ -161,10 +166,14 @@ class StaffActivityForm(forms.Form):
         return result
 
     def get_created_products_data(self):
+        timestamp = self.cleaned_data["timestamp"]
+        start_date = timestamp.start.date()
+        end_date = timestamp.stop.date()
+
         created_products = (
             Product.objects.filter(
-                creation_date__gte=self.cleaned_data["start_date"],
-                creation_date__lte=self.cleaned_data["end_date"],
+                creation_date__gte=start_date,
+                creation_date__lte=end_date,
                 creator=self.cleaned_data["staff"],
             )
             .annotate(date=TruncDate("creation_date"))
