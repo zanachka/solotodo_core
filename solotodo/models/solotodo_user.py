@@ -293,5 +293,5 @@ class SoloTodoUser(AbstractEmailUser):
                 "Can view users with that have executed staff actions",
             ),
             ("backend_list_users", "Can view user list in backend"),
-            ("is_staff_manager", "Is manager of staff users"),
+            ("is_staff_manager", "Is manager of the rest of the staff"),
         )

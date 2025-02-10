@@ -3,8 +3,11 @@ from rest_framework import serializers
 from wtb.serializers import WtbEntitySerializer
 from .models import MicrositeBrand, MicrositeEntry
 from solotodo.models import Entity, EntityHistory
-from solotodo.serializers import \
-    NestedProductSerializerWithCategory, ProductSerializer, BrandSerializer
+from solotodo.serializers import (
+    NestedProductSerializerWithCategory,
+    ProductSerializer,
+    BrandSerializer,
+)
 
 
 class MicrositeEntrySerializer(serializers.HyperlinkedModelSerializer):
@@ -12,54 +15,96 @@ class MicrositeEntrySerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = MicrositeEntry
-        fields = ('url', 'id', 'brand', 'product', 'ordering', 'home_ordering',
-                  'sku', 'brand_url', 'title', 'subtitle', 'description',
-                  'reference_price', 'custom_attr_1_str', 'custom_attr_2_str',
-                  'custom_attr_3_str', 'custom_attr_4_str',
-                  'custom_attr_5_str')
+        fields = (
+            "url",
+            "id",
+            "brand",
+            "product",
+            "ordering",
+            "home_ordering",
+            "sku",
+            "brand_url",
+            "title",
+            "subtitle",
+            "description",
+            "reference_price",
+            "custom_attr_1_str",
+            "custom_attr_2_str",
+            "custom_attr_3_str",
+            "custom_attr_4_str",
+            "custom_attr_5_str",
+        )
 
 
-class MicrositeEntryWithoutProductSerializer(
-        serializers.HyperlinkedModelSerializer):
+class MicrositeEntryWithoutProductSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = MicrositeEntry
         fields = (
-            'url', 'id', 'brand', 'ordering', 'home_ordering', 'sku',
-            'brand_url', 'title', 'subtitle', 'description', 'reference_price',
-            'custom_attr_1_str', 'custom_attr_2_str', 'custom_attr_3_str',
-            'custom_attr_4_str', 'custom_attr_5_str')
+            "url",
+            "id",
+            "brand",
+            "ordering",
+            "home_ordering",
+            "sku",
+            "brand_url",
+            "title",
+            "subtitle",
+            "description",
+            "reference_price",
+            "custom_attr_1_str",
+            "custom_attr_2_str",
+            "custom_attr_3_str",
+            "custom_attr_4_str",
+            "custom_attr_5_str",
+        )
 
 
 class MicrositeEntrySiteSerializer(serializers.Serializer):
     class CustomEntitySerializer(serializers.HyperlinkedModelSerializer):
-        class EntityHistoryCustomSerializer(
-                serializers.HyperlinkedModelSerializer):
+        class EntityHistoryCustomSerializer(serializers.HyperlinkedModelSerializer):
             class Meta:
                 model = EntityHistory
-                fields = ['id', 'normal_price', 'offer_price']
+                fields = ["id", "normal_price", "offer_price"]
 
         active_registry = EntityHistoryCustomSerializer()
-        external_url = serializers.URLField(source='url')
+        external_url = serializers.URLField(source="url")
 
         class Meta:
             model = Entity
+            fields = ("id", "store", "external_url", "active_registry")
+
+    class CustomWtbEntitySerializer(WtbEntitySerializer):
+        class Meta(WtbEntitySerializer.Meta):
             fields = (
-                'id',
-                'store',
-                'external_url',
-                'active_registry'
+                "url",
+                "id",
+                "name",
+                "model_name",
+                # "brand",
+                "category",
+                # "full_category",
+                "external_url",
+                "product",
+                "key",
+                "picture_url",
+                "section",
+                "creation_date",
+                "last_updated",
+                "is_visible",
+                "is_active",
+                "price",
             )
 
     metadata = MicrositeEntryWithoutProductSerializer()
     product = ProductSerializer()
     entities = CustomEntitySerializer(many=True)
     keywords = serializers.SerializerMethodField()
-    wtb_entity = WtbEntitySerializer()
+    wtb_entity = CustomWtbEntitySerializer()
 
     def get_keywords(self, obj):
-        keywords = obj['product'].keywords
-        keywords += ' ' + obj['metadata'].get_keywords()
+        keywords = obj["product"].keywords
+        keywords += " " + obj["metadata"].get_keywords()
         return keywords
 
 
@@ -69,4 +114,4 @@ class MicrositeBrandSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = MicrositeBrand
-        fields = ('url', 'id', 'name', 'brand', 'fields', 'entries')
+        fields = ("url", "id", "name", "brand", "fields", "entries")

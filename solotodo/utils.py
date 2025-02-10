@@ -6,6 +6,8 @@ import requests
 from bs4 import BeautifulSoup
 from django.core.exceptions import ValidationError
 
+from storescraper.utils import session_with_proxy
+
 
 def iterable_to_dict(iterable_or_model, field="id"):
     if not isinstance(iterable_or_model, collections.abc.Iterable):
@@ -96,11 +98,14 @@ def validate_sii_rut(value):
 
 
 def fetch_sec_fields(qr_code):
+    from django.conf import settings
+
     zeros = 13 - len(str(qr_code))
     url = "https://ww6.sec.cl/qr/qr.do?a=prod&i={}{}".format(zeros * "0", qr_code)
     print(url)
 
-    res = requests.get(url)
+    session = session_with_proxy(settings.SEC_FETCH_EXTRA_ARGS)
+    res = session.get(url)
     soup = BeautifulSoup(res.text, "html.parser")
     d = {}
     for label in soup.find("table", "tabla").findAll("strong"):
