@@ -157,3 +157,15 @@ def send_historic_entity_positions_report_task(store_id, user_id, query_string):
 def update_entity_sec_qr_codes(entity_id):
     e = Entity.objects.get(pk=entity_id)
     e.update_sec_qr_codes()
+
+
+@shared_task(
+    queue="store_update",
+    ignore_result=True,
+    autoretry_for=(Exception,),
+    max_retries=2,
+    default_retry_delay=10,
+)
+def ai_associate_entity(entity_id):
+    entity = Entity.objects.get(pk=entity_id)
+    entity.ai_associate()
