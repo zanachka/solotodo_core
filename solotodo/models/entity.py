@@ -834,9 +834,7 @@ class Entity(models.Model):
         classification = create_model(
             "Classification", **{"category": (Optional[str], Field(enum=categories))}
         )
-        llm = ChatOpenAI(temperature=0, model="gpt-4o-mini").with_structured_output(
-            classification
-        )
+        llm = settings.LLM.with_structured_output(classification)
         prompt = tagging_prompt.invoke({"input": self.ai_get_input()})
         extracted_category = llm.invoke(prompt).category
 
@@ -863,9 +861,7 @@ class Entity(models.Model):
 
         fields_annotation = self.category.get_fields_annotation()
         Classification = create_model("Classification", **fields_annotation)
-        llm = ChatOpenAI(temperature=0, model="gpt-4o-mini").with_structured_output(
-            Classification
-        )
+        llm = settings.LLM.with_structured_output(Classification)
         prompt = tagging_prompt.invoke({"input": self.ai_get_input()})
         response = dict(llm.invoke(prompt))
         response["errors"] = {}
