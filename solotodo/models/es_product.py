@@ -58,7 +58,7 @@ class EsProduct(EsProductEntities):
             specs["default_bucket"] = specs["id"]
 
         # Vector fields
-        document_content = {}
+        document_content = {"id": product.id}
         for instance_field in product.instance_model.fields.select_related("field"):
             base_field_name = instance_field.field.name
             field_value_candidate_1 = specs.get(base_field_name, None)

@@ -98,6 +98,8 @@ class Category(models.Model):
         field_types = {
             "CharField": str,
             "IntegerField": int,
+            "BooleanField": bool,
+            "DecimalField": float,
         }
 
         for field in category.meta_model.fields.all():

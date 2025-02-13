@@ -937,7 +937,7 @@ class Entity(models.Model):
         ):
             if score > 0.94:
                 content = json.loads(response.page_content)
-                product = Product.objects.get(pk=content["product_id"])
+                product = Product.objects.get(pk=content["id"])
 
                 return product
 
