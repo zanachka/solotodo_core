@@ -95,6 +95,7 @@ def update_related_products(instance_model, created, creator_id, **kwargs):
 @receiver(product_saved)
 def update_product_in_es(product, es_document, **kwargs):
     EsProduct.from_product(product, es_document).save()
+    EsProduct.ai_add_vector(product)
 
 
 @receiver(post_delete, sender=Product)

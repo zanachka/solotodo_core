@@ -12,7 +12,6 @@ from django.db import models, IntegrityError
 from django.db.models import Q, Count
 from django.utils import timezone
 from PIL import Image
-from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pyzbar.pyzbar import decode
@@ -228,7 +227,7 @@ class Entity(models.Model):
         ("https://schema.org/OpenBoxCondition", "Open Box"),
     ]
     CONDITION_CHOICES_DICT = dict(CONDITION_CHOICES)
-
+    AI_EXTRACTION_CATEGORIES = ["Perfumes"]
     store = models.ForeignKey(Store, on_delete=models.CASCADE)
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
     scraped_category = models.ForeignKey(
@@ -846,7 +845,9 @@ class Entity(models.Model):
         if ia_category != self.category:
             self.category = ia_category
             self.save(update_fields=["category"])
-            return {}
+
+            if self.category.name not in self.AI_EXTRACTION_CATEGORIES:
+                return {}
 
         tagging_prompt = ChatPromptTemplate.from_template(
             """
@@ -936,14 +937,6 @@ class Entity(models.Model):
 
         return None
 
-    def es_add_document(self, entity_data=None):
-        if not entity_data:
-            entity_data = self.ai_extract_entity_data()
-
-        entity_data["product_id"] = self.product_id
-        document = Document(page_content=json.dumps(entity_data))
-        settings.VECTOR_STORE.add_documents(documents=[document])
-
     def ai_associate(self):
         if self.product_id:
             raise Exception("Entity already associated")
@@ -955,7 +948,6 @@ class Entity(models.Model):
             instance = self.create_instance_model(instance_data=page_content)
             product = Product.objects.get(instance_model=instance)
             self.associate(SoloTodoUser.get_bot(), product)
-            self.es_add_document(entity_data=page_content)
         else:
             self.associate(SoloTodoUser.get_bot(), similar_product)
 

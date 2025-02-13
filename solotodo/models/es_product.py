@@ -1,5 +1,9 @@
+import json
+from langchain_core.documents import Document
 from elasticsearch_dsl import Text, Keyword, Object, Integer, Date
 from .es_product_entities import EsProductEntities
+
+from django.conf import settings
 
 
 class EsProduct(EsProductEntities):
@@ -60,3 +64,15 @@ class EsProduct(EsProductEntities):
             product_relationships="product",
             meta={"id": "PRODUCT_{}".format(product.id)},
         )
+
+    @classmethod
+    def ai_add_vector(cls, product):
+        entity_data = {}
+        fields = product.instance_model.fields.all()
+
+        for field in fields:
+            entity_data[field.field.name] = str(field.value)
+
+        entity_data["product_id"] = product.pk
+        document = Document(page_content=json.dumps(entity_data))
+        settings.VECTOR_STORE.add_documents(documents=[document])
