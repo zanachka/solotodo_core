@@ -93,12 +93,15 @@ class EsProduct(EsProductEntities):
 
     @classmethod
     def ai_add_vector(cls, product):
-        entity_data = {}
+        data = {}
         fields = product.instance_model.fields.all()
 
         for field in fields:
-            entity_data[field.field.name] = str(field.value)
+            if field.field.model.name == "FileField":
+                continue
 
-        entity_data["product_id"] = product.pk
-        document = Document(page_content=json.dumps(entity_data))
+            data[field.field.name] = str(field.value)
+
+        data["product_id"] = product.pk
+        document = Document(page_content=json.dumps(data), id=product.pk)
         settings.VECTOR_STORE.add_documents(documents=[document])

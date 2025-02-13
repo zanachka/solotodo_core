@@ -2,6 +2,7 @@ import io
 import json
 import re
 import requests
+import time
 import urllib
 from decimal import Decimal
 from typing import Optional
@@ -813,6 +814,19 @@ class Entity(models.Model):
             sec_entries.append(sec_entry)
         return sec_entries
 
+    def ai_get_trade_name(self):
+        tagging_prompt = ChatPromptTemplate.from_template(
+            """
+            From the given input, returns only the tradename of the product, removing any specification or brand name.
+            
+            {input}
+            """
+        )
+        llm = settings.LLM
+        prompt = tagging_prompt.invoke({"input": self.name})
+
+        return llm.invoke(prompt).content
+
     def ai_get_input(self):
         data = {
             "name": self.name,
@@ -864,6 +878,7 @@ class Entity(models.Model):
         llm = settings.LLM.with_structured_output(Classification)
         prompt = tagging_prompt.invoke({"input": self.ai_get_input()})
         response = dict(llm.invoke(prompt))
+        response["name"] = self.ai_get_trade_name()
         response["errors"] = {}
 
         for field, value in response.items():
@@ -919,7 +934,7 @@ class Entity(models.Model):
 
         image_url = json.loads(self.picture_urls)[0]
         response = requests.get(image_url, stream=True)
-        filename = f"products/{self.category.name.lower()}-{self.pk}"
+        filename = f"products/{self.category.name.lower()}-{self.pk}-{int(time.time())}"
         storage = MediaRootS3Boto3Storage()
         storage.save(filename, ContentFile(response.content))
         file_url = storage.url(filename)
@@ -935,7 +950,7 @@ class Entity(models.Model):
         for response, score in settings.VECTOR_STORE.similarity_search_with_score(
             query=json.dumps(entity_data)
         ):
-            if score > 0.94:
+            if score > 0.95:
                 content = json.loads(response.page_content)
                 product = Product.objects.get(pk=content["id"])
 
