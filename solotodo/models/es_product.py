@@ -1,6 +1,6 @@
 import json
 from langchain_core.documents import Document
-from elasticsearch_dsl import Text, Keyword, Object, Integer, Date
+from elasticsearch_dsl import Text, Keyword, Object, Integer, Date, DenseVector
 from .es_product_entities import EsProductEntities
 
 from django.conf import settings
@@ -21,6 +21,17 @@ class EsProduct(EsProductEntities):
     keywords = Text()
     specs = Object(dynamic=True)
     related_instance_model_ids = Integer(multi=True)
+
+    text = Text(fields={"keyword": Keyword()})
+    metadata = Object(
+        dynamic=True, properties={"source": Text(fields={"keyword": Keyword()})}
+    )
+    vector = DenseVector(
+        dims=3072,
+        index=True,
+        similarity="cosine",
+        index_options={"type": "int8_hnsw", "m": 16, "ef_construction": 100},
+    )
 
     @classmethod
     def search(cls, **kwargs):
