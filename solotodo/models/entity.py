@@ -1,12 +1,14 @@
 import io
 import json
 import re
+import requests
 import urllib
 from decimal import Decimal
 from typing import Optional
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.files.base import ContentFile
 from django.core.validators import validate_comma_separated_integer_list
 from django.db import models, IntegrityError
 from django.db.models import Q, Count
@@ -26,6 +28,7 @@ from .bundle import Bundle
 from .coupon import Coupon
 from .es_product import EsProduct
 from solotodo.utils import iterable_to_dict, fetch_sec_fields
+from solotodo_core.s3utils import MediaRootS3Boto3Storage
 from storescraper.utils import session_with_proxy
 from metamodel.models import InstanceModel
 
@@ -904,7 +907,7 @@ class Entity(models.Model):
         instance.save(initial=True)
 
         for field in fields:
-            if field.name == "picture":  # TODO
+            if field.name == "picture":
                 continue
 
             field_name = field.name
@@ -918,6 +921,13 @@ class Entity(models.Model):
                 )
                 setattr(instance, field_name, field_instance)
 
+        image_url = json.loads(self.picture_urls)[0]
+        response = requests.get(image_url, stream=True)
+        filename = f"products/{self.category.name.lower()}-{self.pk}"
+        storage = MediaRootS3Boto3Storage()
+        storage.save(filename, ContentFile(response.content))
+        file_url = storage.url(filename)
+        instance.picture = file_url.split("media/")[-1]
         instance.save(creator_id=SoloTodoUser.get_bot().pk)
 
         return instance
