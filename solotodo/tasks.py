@@ -160,7 +160,7 @@ def update_entity_sec_qr_codes(entity_id):
 
 
 @shared_task(
-    queue="store_update",
+    queue="general",
     ignore_result=True,
     autoretry_for=(Exception,),
     max_retries=2,
@@ -168,4 +168,5 @@ def update_entity_sec_qr_codes(entity_id):
 )
 def ai_associate_entity(entity_id):
     entity = Entity.objects.get(pk=entity_id)
+    entity.ai_update_category()
     entity.ai_associate()

@@ -814,7 +814,7 @@ class Entity(models.Model):
             sec_entries.append(sec_entry)
         return sec_entries
 
-    def ai_get_trade_name(self):
+    def ai_infer_trade_name(self):
         tagging_prompt = ChatPromptTemplate.from_template(
             """
             From the given input, returns only the tradename of the product, removing any specification or brand name.
@@ -836,7 +836,7 @@ class Entity(models.Model):
 
         return json.dumps(data)
 
-    def ai_get_category(self):
+    def ai_infer_category(self):
         tagging_prompt = ChatPromptTemplate.from_template(
             """
             Determine what category the product corresponds to based on its characteristics:
@@ -852,18 +852,11 @@ class Entity(models.Model):
         prompt = tagging_prompt.invoke({"input": self.ai_get_input()})
         extracted_category = llm.invoke(prompt).category
 
+        # TODO Case when the entity is of a category not currently considered
+
         return Category.objects.get(name=extracted_category)
 
-    def ai_extract_entity_data(self):
-        ia_category = self.ai_get_category()
-
-        if ia_category != self.category:
-            self.category = ia_category
-            self.save(update_fields=["category"])
-
-            if self.category.name not in self.AI_EXTRACTION_CATEGORIES:
-                return {}
-
+    def ai_infer_product_data(self):
         tagging_prompt = ChatPromptTemplate.from_template(
             """
             Extract the desired information from the following input.
@@ -878,7 +871,7 @@ class Entity(models.Model):
         llm = settings.LLM.with_structured_output(Classification)
         prompt = tagging_prompt.invoke({"input": self.ai_get_input()})
         response = dict(llm.invoke(prompt))
-        response["name"] = self.ai_get_trade_name()
+        response["name"] = self.ai_infer_trade_name()
         response["errors"] = {}
 
         for field, value in response.items():
@@ -904,12 +897,12 @@ class Entity(models.Model):
 
         return response
 
-    def create_instance_model(self, instance_data=None):
-        if not instance_data:
-            instance_data = self.ai_extract_entity_data()
+    def create_instance_model(self, inferred_product_data=None):
+        if not inferred_product_data:
+            inferred_product_data = self.ai_infer_product_data()
 
-        if instance_data["errors"] != {}:
-            raise Exception(instance_data["errors"])
+        if inferred_product_data["errors"] != {}:
+            raise Exception(inferred_product_data["errors"])
 
         meta_model = self.category.meta_model
         fields = meta_model.fields.all()
@@ -922,7 +915,7 @@ class Entity(models.Model):
                 continue
 
             field_name = field.name
-            instance_value = instance_data[field_name]
+            instance_value = inferred_product_data[field_name]
 
             if field.model.is_primitive():
                 setattr(instance, field_name, instance_value)
@@ -932,23 +925,29 @@ class Entity(models.Model):
                 )
                 setattr(instance, field_name, field_instance)
 
-        image_url = json.loads(self.picture_urls)[0]
-        response = requests.get(image_url, stream=True)
+        picture_urls = self.picture_urls_as_list()
+        if not picture_urls:
+            raise Exception("Entity has no pictures")
+        picture_url = picture_urls[0]
+        response = requests.get(picture_url, stream=True)
+        if response.status_code != 200:
+            # TODO Add checks for MIME types for valid images or something
+            raise Exception("Invalid picture")
         filename = f"products/{self.category.name.lower()}-{self.pk}-{int(time.time())}"
         storage = MediaRootS3Boto3Storage()
         storage.save(filename, ContentFile(response.content))
         file_url = storage.url(filename)
-        instance.picture = file_url.split("media/")[-1]
+        instance.picture = file_url.split(f"{MediaRootS3Boto3Storage.location}/")[-1]
         instance.save(creator_id=SoloTodoUser.get_bot().pk)
 
         return instance
 
-    def es_vector_search(self, entity_data=None):
-        if not entity_data:
-            entity_data = self.ai_extract_entity_data()
+    def es_vector_search(self, inferred_product_data=None):
+        if not inferred_product_data:
+            inferred_product_data = self.ai_infer_product_data()
 
         for response, score in settings.VECTOR_STORE.similarity_search_with_score(
-            query=json.dumps(entity_data)
+            query=json.dumps(inferred_product_data)
         ):
             if score > 0.95:
                 content = json.loads(response.page_content)
@@ -962,15 +961,29 @@ class Entity(models.Model):
         if self.product_id:
             raise Exception("Entity already associated")
 
-        page_content = self.ai_extract_entity_data()
-        similar_product = self.es_vector_search(entity_data=page_content)
+        if self.category.name not in self.AI_EXTRACTION_CATEGORIES:
+            return
+
+        inferred_product_data = self.ai_infer_product_data()
+        similar_product = self.es_vector_search(
+            inferred_product_data=inferred_product_data
+        )
 
         if not similar_product:
-            instance = self.create_instance_model(instance_data=page_content)
+            instance = self.create_instance_model(
+                inferred_product_data=inferred_product_data
+            )
             product = Product.objects.get(instance_model=instance)
             self.associate(SoloTodoUser.get_bot(), product)
         else:
             self.associate(SoloTodoUser.get_bot(), similar_product)
+
+    def ai_update_category(self):
+        ai_category = self.ai_infer_category()
+
+        if ai_category != self.category:
+            self.category = ai_category
+            self.save(update_fields=["category"])
 
     class Meta:
         app_label = "solotodo"
