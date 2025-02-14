@@ -1,4 +1,5 @@
-from typing import Optional
+from enum import Enum
+from typing import Optional, Union, Type
 from pydantic import Field
 
 from django.contrib.auth.models import Group
@@ -93,7 +94,7 @@ class Category(models.Model):
 
         return form_class
 
-    def get_fields_annotation(category):
+    def get_fields_annotation(self):
         fields_annotation = {}
         field_types = {
             "CharField": str,
@@ -102,7 +103,10 @@ class Category(models.Model):
             "DecimalField": float,
         }
 
-        for field in category.meta_model.fields.all():
+        def create_dynamic_enum(name: str, choices: list[str]) -> Type[Enum]:
+            return Enum(name, {choice: choice for choice in choices}, type=str)
+
+        for field in self.meta_model.fields.all():
             field_type = field.model.name
             field_data = Field(description=field.help_text)
 
@@ -114,18 +118,21 @@ class Category(models.Model):
 
             if field.model.is_primitive():
                 fields_annotation[field.name] = (
-                    Optional[field_types[field_type]],
+                    field_types[field_type],
                     field_data,
                 )
             else:
-                enum = list(
+                enum_choices = list(
                     field.model.instancemodel_set.all().values_list(
                         "unicode_representation", flat=True
                     )
                 )
-                field_data.json_schema_extra = {"enum": enum}
+                enum = create_dynamic_enum(f"{field.name}Enum", enum_choices)
+                field_data.description += (
+                    ". Choose from predefined options or suggest a new one if none fit."
+                )
                 fields_annotation[field.name] = (
-                    Optional[str],
+                    Union[enum, str],
                     field_data,
                 )
 

@@ -1,11 +1,13 @@
 import io
 import json
 import re
+from enum import Enum
+
 import requests
 import time
 import urllib
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Type, Union
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -16,9 +18,8 @@ from django.db.models import Q, Count
 from django.utils import timezone
 from PIL import Image
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
 from pyzbar.pyzbar import decode
-from pydantic import Field, create_model
+from pydantic import Field, create_model, BaseModel
 
 from .solotodo_user import SoloTodoUser
 from .product import Product
@@ -306,6 +307,8 @@ class Entity(models.Model):
     # either way because the registry uses the timestamp of the scraping, and
     # this field uses the timestamp of the moment it is updated in the database
     last_pricing_update = models.DateTimeField()
+
+    ai_association_errors = models.JSONField(null=True, blank=True)
 
     objects = EntityQueryset.as_manager()
 
@@ -814,19 +817,6 @@ class Entity(models.Model):
             sec_entries.append(sec_entry)
         return sec_entries
 
-    def ai_infer_trade_name(self):
-        tagging_prompt = ChatPromptTemplate.from_template(
-            """
-            From the given input, returns only the tradename of the product, removing any specification or brand name.
-            
-            {input}
-            """
-        )
-        llm = settings.LLM
-        prompt = tagging_prompt.invoke({"input": self.name})
-
-        return llm.invoke(prompt).content
-
     def ai_get_input(self):
         data = {
             "name": self.name,
@@ -859,25 +849,19 @@ class Entity(models.Model):
     def ai_infer_product_data(self):
         tagging_prompt = ChatPromptTemplate.from_template(
             """
-            Extract the desired information from the following input.
-            Only extract the properties mentioned in the 'Classification' function.
+            Analyze the following product:
             
             {input}
             """
         )
-
         fields_annotation = self.category.get_fields_annotation()
         Classification = create_model("Classification", **fields_annotation)
         llm = settings.LLM.with_structured_output(Classification)
         prompt = tagging_prompt.invoke({"input": self.ai_get_input()})
         response = dict(llm.invoke(prompt))
-        response["name"] = self.ai_infer_trade_name()
-        response["errors"] = {}
+        errors = {}
 
         for field, value in response.items():
-            if field == "errors":
-                continue
-
             field_data = fields_annotation[field][1]
 
             if field_data.default is None:
@@ -886,23 +870,23 @@ class Entity(models.Model):
             schema = field_data.json_schema_extra
 
             if value is None:
-                response["errors"][field] = "not found"
+                errors[field] = "not found"
             elif schema and value not in schema["enum"]:
                 for option in schema["enum"]:
                     if value.lower() == option.lower():
                         response[field] = option
                         break
                 else:
-                    response["errors"][field] = f"choice not found: {value}"
+                    errors[field] = f"Choice not found: {value}"
+
+        if errors:
+            raise Exception(json.dumps(errors))
 
         return response
 
     def create_instance_model(self, inferred_product_data=None):
         if not inferred_product_data:
             inferred_product_data = self.ai_infer_product_data()
-
-        if inferred_product_data["errors"] != {}:
-            raise Exception(inferred_product_data["errors"])
 
         meta_model = self.category.meta_model
         fields = meta_model.fields.all()
@@ -964,7 +948,11 @@ class Entity(models.Model):
         if self.category.name not in self.AI_EXTRACTION_CATEGORIES:
             return
 
-        inferred_product_data = self.ai_infer_product_data()
+        try:
+            inferred_product_data = self.ai_infer_product_data()
+        except Exception as e:
+            print(e)
+            return
         similar_product = self.es_vector_search(
             inferred_product_data=inferred_product_data
         )
@@ -979,6 +967,11 @@ class Entity(models.Model):
             self.associate(SoloTodoUser.get_bot(), product)
 
     def ai_update_category(self):
+        if self.product_id:
+            raise Exception(
+                "Associated entities cannot change their category, please dissociate it first"
+            )
+
         ai_category = self.ai_infer_category()
 
         if ai_category != self.category:
