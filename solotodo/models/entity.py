@@ -969,14 +969,14 @@ class Entity(models.Model):
             inferred_product_data=inferred_product_data
         )
 
-        if not similar_product:
-            instance = self.create_instance_model(
+        if similar_product:
+            self.associate(SoloTodoUser.get_bot(), similar_product)
+        else:
+            instance_model = self.create_instance_model(
                 inferred_product_data=inferred_product_data
             )
-            product = Product.objects.get(instance_model=instance)
+            product = Product.objects.get(instance_model=instance_model)
             self.associate(SoloTodoUser.get_bot(), product)
-        else:
-            self.associate(SoloTodoUser.get_bot(), similar_product)
 
     def ai_update_category(self):
         ai_category = self.ai_infer_category()
