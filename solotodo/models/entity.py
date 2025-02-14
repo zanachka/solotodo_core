@@ -914,14 +914,21 @@ class Entity(models.Model):
             raise Exception("Entity has no pictures")
         picture_url = picture_urls[0]
         response = requests.get(picture_url, stream=True)
-        if response.status_code != 200:
-            # TODO Add checks for MIME types for valid images or something
-            raise Exception("Invalid picture")
-        filename = f"products/{self.category.name.lower()}-{self.pk}-{int(time.time())}"
-        storage = MediaRootS3Boto3Storage()
-        storage.save(filename, ContentFile(response.content))
-        file_url = storage.url(filename)
-        instance.picture = file_url.split(f"{MediaRootS3Boto3Storage.location}/")[-1]
+        # TODO Add checks for MIME types for valid images or something
+        if response.status_code == 200:
+            filename = (
+                f"products/{self.category.name.lower()}-{self.pk}-{int(time.time())}"
+            )
+            storage = MediaRootS3Boto3Storage()
+            storage.save(filename, ContentFile(response.content))
+            file_url = storage.url(filename)
+            instance.picture = file_url.split(f"{MediaRootS3Boto3Storage.location}/")[
+                -1
+            ]
+        else:
+            # TODO Set a better 404 picture
+            instance.picture = "products/Samsung_N130_Negro.jpg"
+
         instance.save(creator_id=SoloTodoUser.get_bot().pk)
 
         return instance
@@ -939,6 +946,7 @@ class Entity(models.Model):
         ):
             if score > 0.95:
                 content = json.loads(response.page_content)
+                print(response)
                 product = Product.objects.get(pk=content["id"])
 
                 return product
@@ -955,7 +963,6 @@ class Entity(models.Model):
         try:
             inferred_product_data = self.ai_infer_product_data()
         except Exception as e:
-            print(e)
             ai_errors = e.args[0]
             self.ai_association_errors = ai_errors
             self.save()

@@ -68,6 +68,9 @@ class EsProduct(EsProductEntities):
             )
         page_content = json.dumps(document_content)
         vector = settings.VECTOR_STORE.embedding.embed_documents([page_content])[0]
+        metadata = {
+            "category_id": product.category_id,
+        }
 
         return cls(
             product_id=product.id,
@@ -88,20 +91,5 @@ class EsProduct(EsProductEntities):
             meta={"id": "PRODUCT_{}".format(product.id)},
             text=page_content,
             vector=vector,
-            metadata={},
+            metadata=metadata,
         )
-
-    @classmethod
-    def ai_add_vector(cls, product):
-        data = {}
-        fields = product.instance_model.fields.all()
-
-        for field in fields:
-            if field.field.model.name == "FileField":
-                continue
-
-            data[field.field.name] = str(field.value)
-
-        data["product_id"] = product.pk
-        document = Document(page_content=json.dumps(data), id=product.pk)
-        settings.VECTOR_STORE.add_documents(documents=[document])
