@@ -1,13 +1,12 @@
 import io
 import json
 import re
-from enum import Enum
 
 import requests
 import time
 import urllib
 from decimal import Decimal
-from typing import Optional, Type, Union
+from typing import Optional
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -19,7 +18,7 @@ from django.utils import timezone
 from PIL import Image
 from langchain_core.prompts import ChatPromptTemplate
 from pyzbar.pyzbar import decode
-from pydantic import Field, create_model, BaseModel
+from pydantic import Field, create_model
 
 from .solotodo_user import SoloTodoUser
 from .product import Product
@@ -232,7 +231,7 @@ class Entity(models.Model):
         ("https://schema.org/OpenBoxCondition", "Open Box"),
     ]
     CONDITION_CHOICES_DICT = dict(CONDITION_CHOICES)
-    AI_EXTRACTION_CATEGORIES = ["Perfumes"]
+    AI_EXTRACTION_CATEGORIES = ["Perfumes", "Cafeteras"]
     store = models.ForeignKey(Store, on_delete=models.CASCADE)
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
     scraped_category = models.ForeignKey(
@@ -633,6 +632,7 @@ class Entity(models.Model):
             "product": product,
             "cell_plan": cell_plan,
             "bundle": bundle,
+            "ai_association_errors": None,
         }
 
         self.update_keeping_log(update_dict, user)
@@ -652,6 +652,7 @@ class Entity(models.Model):
             "product": None,
             "cell_plan": None,
             "bundle": None,
+            "ai_association_errors": None,
         }
 
         if reason:
@@ -847,6 +848,9 @@ class Entity(models.Model):
         return Category.objects.get(name=extracted_category)
 
     def ai_infer_product_data(self):
+        if not self.description:
+            raise Exception({"general": "The entity does not have a description"})
+
         tagging_prompt = ChatPromptTemplate.from_template(
             """
             Analyze the following product:
@@ -854,7 +858,7 @@ class Entity(models.Model):
             {input}
             """
         )
-        fields_annotation = self.category.get_fields_annotation()
+        fields_annotation, fields_enum_choices = self.category.get_fields_annotation()
         Classification = create_model("Classification", **fields_annotation)
         llm = settings.LLM.with_structured_output(Classification)
         prompt = tagging_prompt.invoke({"input": self.ai_get_input()})
@@ -864,23 +868,19 @@ class Entity(models.Model):
         for field, value in response.items():
             field_data = fields_annotation[field][1]
 
+            # TODO ¿Por qué se hace un continue en este caso? El campo podría tener un valor inválido
             if field_data.default is None:
                 continue
 
-            schema = field_data.json_schema_extra
+            field_enum_choices = fields_enum_choices.get(field, None)
 
             if value is None:
-                errors[field] = "not found"
-            elif schema and value not in schema["enum"]:
-                for option in schema["enum"]:
-                    if value.lower() == option.lower():
-                        response[field] = option
-                        break
-                else:
-                    errors[field] = f"Choice not found: {value}"
+                errors[field] = "Not found"
+            elif field_enum_choices and value not in field_enum_choices:
+                errors[field] = f"Choice not found: {value}"
 
         if errors:
-            raise Exception(json.dumps(errors))
+            raise Exception(errors)
 
         return response
 
@@ -928,7 +928,11 @@ class Entity(models.Model):
 
     def es_vector_search(self, inferred_product_data=None):
         if not inferred_product_data:
-            inferred_product_data = self.ai_infer_product_data()
+            try:
+                inferred_product_data = self.ai_infer_product_data()
+            except Exception:
+                # Most likely no valid product data could be inferred
+                return None
 
         for response, score in settings.VECTOR_STORE.similarity_search_with_score(
             query=json.dumps(inferred_product_data)
@@ -952,6 +956,9 @@ class Entity(models.Model):
             inferred_product_data = self.ai_infer_product_data()
         except Exception as e:
             print(e)
+            ai_errors = e.args[0]
+            self.ai_association_errors = ai_errors
+            self.save()
             return
         similar_product = self.es_vector_search(
             inferred_product_data=inferred_product_data

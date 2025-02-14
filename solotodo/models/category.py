@@ -96,6 +96,7 @@ class Category(models.Model):
 
     def get_fields_annotation(self):
         fields_annotation = {}
+        fields_enum_choices = {}
         field_types = {
             "CharField": str,
             "IntegerField": int,
@@ -110,6 +111,7 @@ class Category(models.Model):
             field_type = field.model.name
             field_data = Field(description=field.help_text)
 
+            # TODO Check if this "default" is used somewhere
             if field.nullable:
                 field_data.default = None
 
@@ -127,6 +129,7 @@ class Category(models.Model):
                         "unicode_representation", flat=True
                     )
                 )
+                fields_enum_choices[field.name] = enum_choices
                 enum = create_dynamic_enum(f"{field.name}Enum", enum_choices)
                 field_data.description += (
                     ". Choose from predefined options or suggest a new one if none fit."
@@ -136,7 +139,7 @@ class Category(models.Model):
                     field_data,
                 )
 
-        return fields_annotation
+        return fields_annotation, fields_enum_choices
 
     class Meta:
         app_label = "solotodo"
