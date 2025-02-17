@@ -868,14 +868,10 @@ class Entity(models.Model):
 
         for field, value in response.items():
             field_data = fields_annotation[field][1]
-
-            # TODO ¿Por qué se hace un continue en este caso? El campo podría tener un valor inválido
-            if field_data.default is None:
-                continue
-
+            is_optional = field_data.default is None
             field_enum_choices = fields_enum_choices.get(field, None)
 
-            if value is None:
+            if value is None and not is_optional:
                 errors[field] = "Not found"
             elif field_enum_choices and value not in field_enum_choices:
                 errors[field] = f"Choice not found: {value}"
