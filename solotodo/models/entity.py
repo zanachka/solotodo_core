@@ -15,7 +15,7 @@ from django.core.validators import validate_comma_separated_integer_list
 from django.db import models, IntegrityError
 from django.db.models import Q, Count
 from django.utils import timezone
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from langchain_core.prompts import ChatPromptTemplate
 from pyzbar.pyzbar import decode
 from pydantic import Field, create_model
@@ -232,6 +232,7 @@ class Entity(models.Model):
     ]
     CONDITION_CHOICES_DICT = dict(CONDITION_CHOICES)
     AI_EXTRACTION_CATEGORIES = ["Perfumes", "Cafeteras"]
+    DEFAULT_IMAGE = "products/Samsung_N130_Negro.jpg"
     store = models.ForeignKey(Store, on_delete=models.CASCADE)
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
     scraped_category = models.ForeignKey(
@@ -909,31 +910,39 @@ class Entity(models.Model):
                 )
                 setattr(instance, field_name, field_instance)
 
-        picture_urls = self.picture_urls_as_list()
-        if not picture_urls:
-            raise Exception("Entity has no pictures")
-        picture_url = picture_urls[0]
-        session = self.store.scraper.get_session()
-        response = session.get(picture_url)
-
-        # TODO Add checks for MIME types for valid images or something
-        if response.status_code == 200:
-            filename = (
-                f"products/{self.category.name.lower()}-{self.pk}-{int(time.time())}"
-            )
-            storage = MediaRootS3Boto3Storage()
-            storage.save(filename, ContentFile(response.content))
-            file_url = storage.url(filename)
-            instance.picture = file_url.split(f"{MediaRootS3Boto3Storage.location}/")[
-                -1
-            ]
-        else:
-            # TODO Set a better 404 picture
-            instance.picture = "products/Samsung_N130_Negro.jpg"
-
+        instance.picture = self.get_instance_model_picture()
         instance.save(creator_id=SoloTodoUser.get_bot().pk)
 
         return instance
+
+    def get_instance_model_picture(self):
+        if self.product:
+            return self.product.instance_model.picture.url.split(
+                f"{MediaRootS3Boto3Storage.location}/"
+            )[-1]
+
+        picture_urls = self.picture_urls_as_list()
+
+        if not picture_urls:
+            return self.DEFAULT_IMAGE
+
+        session = self.store.scraper.get_session()
+        response = session.get(picture_urls[0], stream=True)
+
+        if response.status_code != 200:
+            return self.DEFAULT_IMAGE
+
+        try:
+            Image.open(io.BytesIO(response.content))
+        except UnidentifiedImageError:
+            return self.DEFAULT_IMAGE
+
+        filename = f"products/{self.category.name.lower()}-{self.pk}-{int(time.time())}"
+        storage = MediaRootS3Boto3Storage()
+        storage.save(filename, ContentFile(response.content))
+        file_url = storage.url(filename)
+
+        return file_url.split(f"{MediaRootS3Boto3Storage.location}/")[-1]
 
     def es_vector_search(self, inferred_product_data=None):
         if not inferred_product_data:
