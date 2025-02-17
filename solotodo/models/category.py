@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Optional, Union, Type
+from typing import Union, Type
 from pydantic import Field
 
 from django.contrib.auth.models import Group
@@ -111,7 +111,6 @@ class Category(models.Model):
             field_type = field.model.name
             field_data = Field(description=field.help_text)
 
-            # TODO Check if this "default" is used somewhere
             if field.nullable:
                 field_data.default = None
 

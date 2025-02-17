@@ -2,11 +2,11 @@ import io
 import json
 import re
 
-import requests
 import time
 import urllib
 from decimal import Decimal
-from typing import Optional
+from enum import Enum
+from typing import Union
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -15,7 +15,7 @@ from django.core.validators import validate_comma_separated_integer_list
 from django.db import models, IntegrityError
 from django.db.models import Q, Count
 from django.utils import timezone
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from langchain_core.prompts import ChatPromptTemplate
 from pyzbar.pyzbar import decode
 from pydantic import Field, create_model
@@ -232,6 +232,7 @@ class Entity(models.Model):
     ]
     CONDITION_CHOICES_DICT = dict(CONDITION_CHOICES)
     AI_EXTRACTION_CATEGORIES = ["Perfumes", "Cafeteras"]
+    DEFAULT_IMAGE = "products/Samsung_N130_Negro.jpg"
     store = models.ForeignKey(Store, on_delete=models.CASCADE)
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
     scraped_category = models.ForeignKey(
@@ -834,18 +835,24 @@ class Entity(models.Model):
             {input}
             """
         )
-
-        categories = list(Category.objects.all().values_list("name", flat=True))
-        classification = create_model(
-            "Classification", **{"category": (Optional[str], Field(enum=categories))}
+        field_data = Field(
+            description="The product category. Choose from predefined options or suggest a new one if none fit."
         )
-        llm = settings.LLM.with_structured_output(classification)
+        categories = list(Category.objects.all().values_list("name", flat=True))
+        enum = Enum("categoryEnum", {choice: choice for choice in categories}, type=str)
+        Classification = create_model(
+            "Classification", category=(Union[enum, str], field_data)
+        )
+        llm = settings.LLM.with_structured_output(Classification)
         prompt = tagging_prompt.invoke({"input": self.ai_get_input()})
-        extracted_category = llm.invoke(prompt).category
+        infered_category = llm.invoke(prompt).category
 
-        # TODO Case when the entity is of a category not currently considered
+        if infered_category not in categories:
+            raise (
+                Exception(f"The infered Category does not exist: {infered_category}")
+            )
 
-        return Category.objects.get(name=extracted_category)
+        return Category.objects.get(name=infered_category)
 
     def ai_infer_product_data(self):
         if not self.description:
@@ -867,14 +874,10 @@ class Entity(models.Model):
 
         for field, value in response.items():
             field_data = fields_annotation[field][1]
-
-            # TODO ¿Por qué se hace un continue en este caso? El campo podría tener un valor inválido
-            if field_data.default is None:
-                continue
-
+            is_optional = field_data.default is None
             field_enum_choices = fields_enum_choices.get(field, None)
 
-            if value is None:
+            if value is None and not is_optional:
                 errors[field] = "Not found"
             elif field_enum_choices and value not in field_enum_choices:
                 errors[field] = f"Choice not found: {value}"
@@ -909,31 +912,39 @@ class Entity(models.Model):
                 )
                 setattr(instance, field_name, field_instance)
 
-        picture_urls = self.picture_urls_as_list()
-        if not picture_urls:
-            raise Exception("Entity has no pictures")
-        picture_url = picture_urls[0]
-        session = self.store.scraper.get_session()
-        response = session.get(picture_url)
-
-        # TODO Add checks for MIME types for valid images or something
-        if response.status_code == 200:
-            filename = (
-                f"products/{self.category.name.lower()}-{self.pk}-{int(time.time())}"
-            )
-            storage = MediaRootS3Boto3Storage()
-            storage.save(filename, ContentFile(response.content))
-            file_url = storage.url(filename)
-            instance.picture = file_url.split(f"{MediaRootS3Boto3Storage.location}/")[
-                -1
-            ]
-        else:
-            # TODO Set a better 404 picture
-            instance.picture = "products/Samsung_N130_Negro.jpg"
-
+        instance.picture = self.get_instance_model_picture()
         instance.save(creator_id=SoloTodoUser.get_bot().pk)
 
         return instance
+
+    def get_instance_model_picture(self):
+        if self.product:
+            return self.product.instance_model.picture.url.split(
+                f"{MediaRootS3Boto3Storage.location}/"
+            )[-1]
+
+        picture_urls = self.picture_urls_as_list()
+
+        if not picture_urls:
+            return self.DEFAULT_IMAGE
+
+        session = self.store.scraper.get_session()
+        response = session.get(picture_urls[0], stream=True)
+
+        if response.status_code != 200:
+            return self.DEFAULT_IMAGE
+
+        try:
+            Image.open(io.BytesIO(response.content))
+        except UnidentifiedImageError:
+            return self.DEFAULT_IMAGE
+
+        filename = f"products/{self.category.name.lower()}-{self.pk}-{int(time.time())}"
+        storage = MediaRootS3Boto3Storage()
+        storage.save(filename, ContentFile(response.content))
+        file_url = storage.url(filename)
+
+        return file_url.split(f"{MediaRootS3Boto3Storage.location}/")[-1]
 
     def es_vector_search(self, inferred_product_data=None):
         if not inferred_product_data:
