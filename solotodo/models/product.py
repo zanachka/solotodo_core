@@ -12,6 +12,7 @@ from django.db.models import Q
 from django.db.models.deletion import Collector
 from django.utils.text import slugify
 from sklearn.neighbors import NearestNeighbors
+from scipy.spatial import distance
 
 from metamodel.models import InstanceModel
 from .es_product import EsProduct
@@ -566,6 +567,13 @@ class Product(models.Model):
 
             result.append({"label": watcher.name, "pending_fields": pending_fields})
         return result
+
+    def vector_distance(self, other_product):
+        from .es_product import EsProduct
+
+        vector_1 = EsProduct.get_by_product_id(self.id).vector
+        vector_2 = EsProduct.get_by_product_id(other_product.id).vector
+        return distance.cosine(vector_1, vector_2)
 
     class Meta:
         app_label = "solotodo"

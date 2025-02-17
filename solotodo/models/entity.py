@@ -959,6 +959,9 @@ class Entity(models.Model):
         if self.product_id:
             raise Exception("Entity already associated")
 
+        if not self.is_visible:
+            raise Exception("Entity has been marked as non-relevant")
+
         if self.category.name not in self.AI_EXTRACTION_CATEGORIES:
             return
 
