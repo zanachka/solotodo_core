@@ -2,11 +2,11 @@ import io
 import json
 import re
 
-import requests
 import time
 import urllib
 from decimal import Decimal
-from typing import Optional
+from enum import Enum
+from typing import Union
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -835,18 +835,24 @@ class Entity(models.Model):
             {input}
             """
         )
-
-        categories = list(Category.objects.all().values_list("name", flat=True))
-        classification = create_model(
-            "Classification", **{"category": (Optional[str], Field(enum=categories))}
+        field_data = Field(
+            description="The product category. Choose from predefined options or suggest a new one if none fit."
         )
-        llm = settings.LLM.with_structured_output(classification)
+        categories = list(Category.objects.all().values_list("name", flat=True))
+        enum = Enum("categoryEnum", {choice: choice for choice in categories}, type=str)
+        Classification = create_model(
+            "Classification", category=(Union[enum, str], field_data)
+        )
+        llm = settings.LLM.with_structured_output(Classification)
         prompt = tagging_prompt.invoke({"input": self.ai_get_input()})
-        extracted_category = llm.invoke(prompt).category
+        infered_category = llm.invoke(prompt).category
 
-        # TODO Case when the entity is of a category not currently considered
+        if infered_category not in categories:
+            raise (
+                Exception(f"The infered Category does not exist: {infered_category}")
+            )
 
-        return Category.objects.get(name=extracted_category)
+        return Category.objects.get(name=infered_category)
 
     def ai_infer_product_data(self):
         if not self.description:
