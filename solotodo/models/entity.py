@@ -913,7 +913,9 @@ class Entity(models.Model):
         if not picture_urls:
             raise Exception("Entity has no pictures")
         picture_url = picture_urls[0]
-        response = requests.get(picture_url, stream=True)
+        session = self.store.scraper.get_session()
+        response = session.get(picture_url)
+
         # TODO Add checks for MIME types for valid images or something
         if response.status_code == 200:
             filename = (
