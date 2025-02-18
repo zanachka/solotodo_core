@@ -860,7 +860,7 @@ class Entity(models.Model):
 
         tagging_prompt = ChatPromptTemplate.from_template(
             """
-            Analyze the following product:
+            Obten las características del producto descrito en el siguiente JSON. El campo 'description' está en formato Markdown:
             
             {input}
             """
@@ -929,7 +929,7 @@ class Entity(models.Model):
             return self.DEFAULT_IMAGE
 
         session = self.store.scraper.get_session()
-        response = session.get(picture_urls[0], stream=True)
+        response = session.get(picture_urls[0])
 
         if response.status_code != 200:
             return self.DEFAULT_IMAGE
@@ -959,7 +959,6 @@ class Entity(models.Model):
         ):
             if score > 0.95:
                 content = json.loads(response.page_content)
-                print(response)
                 product = Product.objects.get(pk=content["id"])
 
                 return product
