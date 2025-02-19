@@ -2,6 +2,7 @@ import io
 import json
 import re
 
+import rapidfuzz
 import time
 import urllib
 from decimal import Decimal
@@ -879,8 +880,19 @@ class Entity(models.Model):
 
             if value is None and not is_optional:
                 errors[field] = "Not found"
-            elif field_enum_choices and value not in field_enum_choices:
-                errors[field] = f"Choice not found: {value}"
+                continue
+
+            if value and field_enum_choices and value not in field_enum_choices:
+                uppercase_field_enum_choices_dict = {
+                    x: x.upper() for x in field_enum_choices
+                }
+                uppercase_best_match, score, best_match = rapidfuzz.process.extractOne(
+                    value.upper(), uppercase_field_enum_choices_dict
+                )
+                if score >= 90:
+                    response[field] = best_match
+                else:
+                    errors[field] = f"Choice not found: {value}"
 
         if errors:
             raise Exception(errors)
