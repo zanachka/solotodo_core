@@ -309,7 +309,7 @@ class Entity(models.Model):
     # this field uses the timestamp of the moment it is updated in the database
     last_pricing_update = models.DateTimeField()
 
-    ai_association_errors = models.JSONField(null=True, blank=True)
+    ai_inferred_product_data = models.JSONField(null=True, blank=True)
 
     objects = EntityQueryset.as_manager()
 
@@ -856,8 +856,10 @@ class Entity(models.Model):
         return Category.objects.get(name=infered_category)
 
     def ai_infer_product_data(self):
+        errors = {}
         if not self.description:
-            raise Exception({"general": "The entity does not have a description"})
+            errors["general"] = "The entity does not have a description"
+            return {}, errors
 
         tagging_prompt = ChatPromptTemplate.from_template(
             """
@@ -871,7 +873,6 @@ class Entity(models.Model):
         llm = settings.LLM.with_structured_output(Classification)
         prompt = tagging_prompt.invoke({"input": self.ai_get_input()})
         response = dict(llm.invoke(prompt))
-        errors = {}
 
         for field, value in response.items():
             field_data = fields_annotation[field][1]
@@ -894,14 +895,23 @@ class Entity(models.Model):
                 else:
                     errors[field] = f"Choice not found: {value}"
 
-        if errors:
-            raise Exception(errors)
+        return response, errors
 
-        return response
+    def update_ai_inferred_product_data(self):
+        field_data, errors = self.ai_infer_product_data()
+        ai_inferred_product_data = {
+            "fields": field_data,
+            "errors": errors,
+        }
+        self.ai_inferred_product_data = ai_inferred_product_data
+        self.save()
 
-    def create_instance_model(self, inferred_product_data=None):
-        if not inferred_product_data:
-            inferred_product_data = self.ai_infer_product_data()
+    def create_instance_model(self):
+        if not self.ai_inferred_product_data:
+            self.update_ai_inferred_product_data()
+
+        if self.ai_inferred_product_data["errors"]:
+            raise Exception("The AI inferred product data has errors")
 
         meta_model = self.category.meta_model
         fields = meta_model.fields.all()
@@ -914,7 +924,7 @@ class Entity(models.Model):
                 continue
 
             field_name = field.name
-            instance_value = inferred_product_data[field_name]
+            instance_value = self.ai_inferred_product_data["fields"][field_name]
 
             if field.model.is_primitive():
                 setattr(instance, field_name, instance_value)
@@ -958,16 +968,15 @@ class Entity(models.Model):
 
         return file_url.split(f"{MediaRootS3Boto3Storage.location}/")[-1]
 
-    def es_vector_search(self, inferred_product_data=None):
-        if not inferred_product_data:
-            try:
-                inferred_product_data = self.ai_infer_product_data()
-            except Exception:
-                # Most likely no valid product data could be inferred
-                return None
+    def es_vector_search(self):
+        if not self.ai_inferred_product_data:
+            self.update_ai_inferred_product_data()
+
+        if self.ai_inferred_product_data["errors"]:
+            return
 
         for response, score in settings.VECTOR_STORE.similarity_search_with_score(
-            query=json.dumps(inferred_product_data)
+            query=json.dumps(self.ai_inferred_product_data["fields"])
         ):
             if score > 0.95:
                 content = json.loads(response.page_content)
@@ -987,23 +996,18 @@ class Entity(models.Model):
         if self.category.name not in self.AI_EXTRACTION_CATEGORIES:
             return
 
-        try:
-            inferred_product_data = self.ai_infer_product_data()
-        except Exception as e:
-            ai_errors = e.args[0]
-            self.ai_association_errors = ai_errors
-            self.save()
+        if not self.ai_inferred_product_data:
+            self.update_ai_inferred_product_data()
+
+        if self.ai_inferred_product_data["errors"]:
             return
-        similar_product = self.es_vector_search(
-            inferred_product_data=inferred_product_data
-        )
+
+        similar_product = self.es_vector_search()
 
         if similar_product:
             self.associate(SoloTodoUser.get_bot(), similar_product)
         else:
-            instance_model = self.create_instance_model(
-                inferred_product_data=inferred_product_data
-            )
+            instance_model = self.create_instance_model()
             product = Product.objects.get(instance_model=instance_model)
             self.associate(SoloTodoUser.get_bot(), product)
 
