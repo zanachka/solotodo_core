@@ -101,7 +101,6 @@ class ReportStoreAnalyticsForm(forms.Form):
 
         query_job = client.query(query)
         products_df = query_job.to_dataframe()
-
         products = Product.objects.filter(
             pk__in=products_df["product_id"].to_list()
         ).select_related("instance_model__model__category", "brand")
@@ -114,15 +113,21 @@ class ReportStoreAnalyticsForm(forms.Form):
         es = (
             Entity.objects.filter(
                 product__in=products_df["product_id"].to_list(),
-                store=selected_store,
                 active_registry__cell_monthly_payment__isnull=True,
+                condition="https://schema.org/NewCondition",
+                store__country=1,
             )
             .get_available()
-            .select_related("product", "active_registry")
+            .order_by("-active_registry__offer_price")
+            .select_related("product", "active_registry", "store")
         )
-        entity_dict = {}
-        for e in es:
-            entity_dict[e.product_id] = int(e.active_registry.offer_price)
+        selected_store_best_price_per_product = {
+            x.product_id: int(x.active_registry.offer_price)
+            for x in es.filter(store=selected_store)
+        }
+
+        # The entities as sorted by descending price so the last to be set is the cheapest one
+        entity_with_best_price_per_product = {x.product_id: x for x in es}
 
         products_dict = {
             product.id: {
@@ -134,6 +139,24 @@ class ReportStoreAnalyticsForm(forms.Form):
             for product in products
         }
 
+        def best_overall_price(entry):
+            entity = entity_with_best_price_per_product.get(entry.product_id, None)
+            if not entity:
+                return None
+            return int(entity.active_registry.offer_price)
+
+        def store_name_with_current_best_price(entry):
+            entity = entity_with_best_price_per_product.get(entry.product_id, None)
+            if not entity:
+                return None
+            return str(entity.store)
+
+        def store_url_with_current_best_price(entry):
+            entity = entity_with_best_price_per_product.get(entry.product_id, None)
+            if not entity:
+                return None
+            return str(entity.url)
+
         products_df["product_name"] = products_df.apply(
             lambda x: products_dict[x.product_id]["name"], axis=1
         )
@@ -144,14 +167,21 @@ class ReportStoreAnalyticsForm(forms.Form):
             lambda x: products_dict[x.product_id]["category"], axis=1
         )
         products_df["entity_price"] = products_df.apply(
-            lambda x: entity_dict.get(x.product_id, None), axis=1
+            lambda x: selected_store_best_price_per_product.get(x.product_id, None),
+            axis=1,
         )
-
-        # else:
-        #     products_df['product_name'] = None
-        #     products_df['product_brand'] = None
-        #     products_df['product_category'] = None
-        #     products_df['entity_price'] = None
+        products_df["best_current_price"] = products_df.apply(
+            best_overall_price,
+            axis=1,
+        )
+        products_df["best_current_price_store"] = products_df.apply(
+            store_name_with_current_best_price,
+            axis=1,
+        )
+        products_df["best_current_price_store_url"] = products_df.apply(
+            store_url_with_current_best_price,
+            axis=1,
+        )
 
         report_cols = [
             "product_id",
@@ -175,6 +205,14 @@ class ReportStoreAnalyticsForm(forms.Form):
                     "retailer_average_price",
                 ]
             )
+
+        report_cols.extend(
+            [
+                "best_current_price",
+                "best_current_price_store",
+                "best_current_price_store_url",
+            ]
+        )
 
         if selected_category:
             spec_columns = CategoryColumn.objects.filter(
@@ -220,6 +258,14 @@ class ReportStoreAnalyticsForm(forms.Form):
                     "Precio promedio {}".format(selected_store),
                 ]
             )
+
+        headers.extend(
+            [
+                "Mejor precio actual",
+                "Tienda con mejor precio",
+                "URL Tienda mejor precio",
+            ]
+        )
 
         for column in spec_columns:
             headers.append(column.field.label)
