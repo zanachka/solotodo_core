@@ -58,8 +58,10 @@ class EsProduct(EsProductEntities):
             specs["default_bucket"] = specs["id"]
 
         # Vector fields
-        document_content = {"id": product.id}
+        document_content = {}
         for instance_field in product.instance_model.fields.select_related("field"):
+            if instance_field.field.model.name == "FileField":
+                continue
             base_field_name = instance_field.field.name
             field_value_candidate_1 = specs.get(base_field_name, None)
             field_value_candidate_2 = specs.get(f"{base_field_name}_unicode", None)
@@ -69,6 +71,7 @@ class EsProduct(EsProductEntities):
         page_content = json.dumps(document_content)
         vector = settings.VECTOR_STORE.embedding.embed_documents([page_content])[0]
         metadata = {
+            "id": product.id,
             "category_id": product.category_id,
         }
 

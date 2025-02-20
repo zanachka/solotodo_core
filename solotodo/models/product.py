@@ -122,6 +122,12 @@ class Product(models.Model):
         return self.instance_model.model.category
 
     @property
+    def es_entry(self):
+        if not self._es_entry:
+            self._es_entry = EsProduct.get("PRODUCT_" + str(self.id)).to_dict()
+        return self._es_entry
+
+    @property
     def specs(self):
         if not self._es_entry:
             self._es_entry = EsProduct.get("PRODUCT_" + str(self.id)).to_dict()

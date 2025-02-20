@@ -634,7 +634,6 @@ class Entity(models.Model):
             "product": product,
             "cell_plan": cell_plan,
             "bundle": bundle,
-            "ai_association_errors": None,
         }
 
         self.update_keeping_log(update_dict, user)
@@ -654,7 +653,6 @@ class Entity(models.Model):
             "product": None,
             "cell_plan": None,
             "bundle": None,
-            "ai_association_errors": None,
         }
 
         if reason:
@@ -979,9 +977,7 @@ class Entity(models.Model):
             query=json.dumps(self.ai_inferred_product_data["fields"])
         ):
             if score > 0.95:
-                content = json.loads(response.page_content)
-                product = Product.objects.get(pk=content["id"])
-
+                product = Product.objects.get(pk=response.metadata["id"])
                 return product
 
         return None
