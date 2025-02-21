@@ -971,16 +971,16 @@ class Entity(models.Model):
             self.update_ai_inferred_product_data()
 
         if self.ai_inferred_product_data["errors"]:
-            return
+            return None, None
 
         for response, score in settings.VECTOR_STORE.similarity_search_with_score(
-            query=json.dumps(self.ai_inferred_product_data["fields"])
+            query=json.dumps(self.ai_inferred_product_data["fields"], sort_keys=True)
         ):
-            if score > 0.95:
+            if score > 0.97:
                 product = Product.objects.get(pk=response.metadata["id"])
-                return product
+                return product, score
 
-        return None
+        return None, None
 
     def ai_associate(self):
         if self.product_id:
@@ -998,7 +998,7 @@ class Entity(models.Model):
         if self.ai_inferred_product_data["errors"]:
             return
 
-        similar_product = self.es_vector_search()
+        similar_product, similar_product_score = self.es_vector_search()
 
         if similar_product:
             self.associate(SoloTodoUser.get_bot(), similar_product)

@@ -68,7 +68,7 @@ class EsProduct(EsProductEntities):
             document_content[base_field_name] = (
                 field_value_candidate_1 or field_value_candidate_2
             )
-        page_content = json.dumps(document_content)
+        page_content = json.dumps(document_content, sort_keys=True)
         vector = settings.VECTOR_STORE.embedding.embed_documents([page_content])[0]
         metadata = {
             "id": product.id,
