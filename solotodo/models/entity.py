@@ -17,6 +17,8 @@ from django.db import models, IntegrityError
 from django.db.models import Q, Count
 from django.utils import timezone
 from PIL import Image, UnidentifiedImageError
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains.retrieval import create_retrieval_chain
 from langchain_core.prompts import ChatPromptTemplate
 from pyzbar.pyzbar import decode
 from pydantic import Field, create_model
@@ -310,6 +312,7 @@ class Entity(models.Model):
     last_pricing_update = models.DateTimeField()
 
     ai_inferred_product_data = models.JSONField(null=True, blank=True)
+    ai_association_similar_products = models.JSONField(null=True, blank=True)
 
     objects = EntityQueryset.as_manager()
 
@@ -870,7 +873,10 @@ class Entity(models.Model):
         Classification = create_model("Classification", **fields_annotation)
         llm = settings.LLM.with_structured_output(Classification)
         prompt = tagging_prompt.invoke({"input": self.ai_get_input()})
-        response = dict(llm.invoke(prompt))
+        try:
+            response = dict(llm.invoke(prompt))
+        except Exception as e:
+            return {}, {"general": str(e)}
 
         for field, value in response.items():
             field_data = fields_annotation[field][1]
@@ -982,6 +988,60 @@ class Entity(models.Model):
 
         return None, None
 
+    def ai_find_similar_products(self):
+        retrieval_qa_chat_prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "Answer any use questions based solely on the context below:\n\n<context>\n{context}\n</context>",
+                ),
+                ("human", "{input}"),
+            ]
+        )
+        combine_docs_chain = create_stuff_documents_chain(
+            settings.LLM, retrieval_qa_chat_prompt
+        )
+        retrieval_chain = create_retrieval_chain(
+            settings.VECTOR_STORE.as_retriever(
+                search_type="similarity",  # Can also try "mmr" for diversity
+                search_kwargs={
+                    "k": 50,  # Increase from default (usually 4) to a much higher number
+                    "score_threshold": 0.5,  # Only include relevant results (adjust as needed)
+                },
+            ),
+            combine_docs_chain,
+        )
+
+        prompt = """
+        Return the information of the five products in the index that -according to you- most closely represent the product described the JSON at the end of this prompt.
+        
+        If there is no context of products just return an empty json list.
+        The response must always be a valid json, with no additional commentaries or text
+
+        The response must be in JSON format without backticks or other formatting, as an array of objects, each with the following keys:
+        
+        product_id: ID of the product.
+        confidence: A number between 0 and 100 representing how confident you are that the product is of the same model as the queried one
+        reasoning: The reason of your response
+        """
+
+        response = retrieval_chain.invoke({"input": f"{prompt} \n {self.ai_get_input}"})
+        json_response = json.loads(response["answer"])
+
+        result = []
+        for entry in json_response:
+            matching_product = Product.objects.get(pk=entry["product_id"])
+
+            result.append(
+                {
+                    "product": matching_product,
+                    "confidence": entry["confidence"],
+                    "reasoning": entry["reasoning"],
+                }
+            )
+
+        return result
+
     def ai_associate(self):
         if self.product_id:
             raise Exception("Entity already associated")
@@ -992,17 +1052,29 @@ class Entity(models.Model):
         if self.category.name not in self.AI_EXTRACTION_CATEGORIES:
             return
 
-        if not self.ai_inferred_product_data:
-            self.update_ai_inferred_product_data()
+        ai_similar_products_data = self.ai_find_similar_products()
 
-        if self.ai_inferred_product_data["errors"]:
-            return
+        serialized_ai_matching_produt_data = [
+            {
+                "product_id": x["product"].id,
+                "confidence": x["confidence"],
+                "reasoning": x["reasoning"],
+            }
+            for x in ai_similar_products_data
+        ]
+        self.ai_association_similar_products = serialized_ai_matching_produt_data
 
-        similar_product, similar_product_score = self.es_vector_search()
-
-        if similar_product:
-            self.associate(SoloTodoUser.get_bot(), similar_product)
+        if ai_similar_products_data and ai_similar_products_data[0]["confidence"] >= 90:
+            self.associate(
+                SoloTodoUser.get_bot(), ai_similar_products_data[0]["product"]
+            )
         else:
+            if not self.ai_inferred_product_data:
+                self.update_ai_inferred_product_data()
+
+            if self.ai_inferred_product_data["errors"]:
+                return
+
             instance_model = self.create_instance_model()
             product = Product.objects.get(instance_model=instance_model)
             self.associate(SoloTodoUser.get_bot(), product)

@@ -58,7 +58,7 @@ class EsProduct(EsProductEntities):
             specs["default_bucket"] = specs["id"]
 
         # Vector fields
-        document_content = {}
+        document_content = {"id": product.id}
         for instance_field in product.instance_model.fields.select_related("field"):
             if instance_field.field.model.name == "FileField":
                 continue
