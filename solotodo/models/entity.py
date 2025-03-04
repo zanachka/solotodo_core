@@ -1013,7 +1013,8 @@ class Entity(models.Model):
         )
 
         prompt = """
-        Return the information of the five products in the index that -according to you- most closely represent the product described the JSON at the end of this prompt.
+        Return the information of the five products in the index that most closely represent the product described the JSON at the end of this prompt.
+        The commercial model of the product is particularly important for this match
         
         If there is no context of products just return an empty json list.
         The response must always be a valid json, with no additional commentaries or text
@@ -1024,13 +1025,18 @@ class Entity(models.Model):
         confidence: A number between 0 and 100 representing how confident you are that the product is of the same model as the queried one
         reasoning: The reason of your response
         """
-
-        response = retrieval_chain.invoke({"input": f"{prompt} \n {self.ai_get_input}"})
+        response = retrieval_chain.invoke(
+            {"input": f"{prompt} \n {self.ai_get_input()}"}
+        )
         json_response = json.loads(response["answer"])
 
         result = []
         for entry in json_response:
-            matching_product = Product.objects.get(pk=entry["product_id"])
+            try:
+                matching_product = Product.objects.get(pk=entry["product_id"])
+            except Product.DoesNotExist:
+                # AI hallucinates product IDs sometimes
+                continue
 
             result.append(
                 {
@@ -1052,7 +1058,11 @@ class Entity(models.Model):
         if self.category.name not in self.AI_EXTRACTION_CATEGORIES:
             return
 
-        ai_similar_products_data = self.ai_find_similar_products()
+        try:
+            ai_similar_products_data = self.ai_find_similar_products()
+        except Exception:
+            return
+        # print(ai_similar_products_data)
 
         serialized_ai_matching_produt_data = [
             {
@@ -1064,7 +1074,7 @@ class Entity(models.Model):
         ]
         self.ai_association_similar_products = serialized_ai_matching_produt_data
 
-        if ai_similar_products_data and ai_similar_products_data[0]["confidence"] >= 90:
+        if ai_similar_products_data and ai_similar_products_data[0]["confidence"] >= 95:
             self.associate(
                 SoloTodoUser.get_bot(), ai_similar_products_data[0]["product"]
             )
