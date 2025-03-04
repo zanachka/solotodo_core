@@ -6,7 +6,7 @@ from decimal import Decimal, InvalidOperation
 import importlib
 
 from PIL import Image
-from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.core.files.uploadedfile import InMemoryUploadedFile, TemporaryUploadedFile
 from django.template import Template, Context
 import os
 from django.conf import settings
@@ -460,7 +460,9 @@ class InstanceModel(models.Model):
                 else:
                     uploaded_file = form_cleaned_data[field.name]
 
-                    if isinstance(uploaded_file, InMemoryUploadedFile):
+                    if isinstance(uploaded_file, InMemoryUploadedFile) or isinstance(
+                        uploaded_file, TemporaryUploadedFile
+                    ):
                         uploaded_image = Image.open(uploaded_file)
                         uploaded_image = trim(uploaded_image)
 
