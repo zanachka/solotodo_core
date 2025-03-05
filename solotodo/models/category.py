@@ -66,6 +66,11 @@ class Category(models.Model):
     browse_result_template = models.TextField(blank=True, null=True)
     detail_template = models.TextField(blank=True, null=True)
 
+    ai_confidence_threshold_for_association = models.IntegerField(null=True, blank=True)
+    ai_additional_prompt_instructions_for_similarity_search = models.CharField(
+        null=True, blank=True
+    )
+
     objects = CategoryQuerySet.as_manager()
 
     def __str__(self):

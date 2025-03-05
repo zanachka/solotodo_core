@@ -234,7 +234,6 @@ class Entity(models.Model):
         ("https://schema.org/OpenBoxCondition", "Open Box"),
     ]
     CONDITION_CHOICES_DICT = dict(CONDITION_CHOICES)
-    AI_EXTRACTION_CATEGORIES = ["Perfumes", "Cafeteras"]
     DEFAULT_IMAGE = "products/Samsung_N130_Negro.jpg"
     store = models.ForeignKey(Store, on_delete=models.CASCADE)
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
@@ -864,7 +863,7 @@ class Entity(models.Model):
 
         tagging_prompt = ChatPromptTemplate.from_template(
             """
-            Obten las características del producto descrito en el siguiente JSON. El campo 'description' está en formato Markdown:
+            Determine the specifications of the product dscribed in the following JSON document. The field 'description' is in Markdown format
             
             {input}
             """
@@ -1007,18 +1006,22 @@ class Entity(models.Model):
                 search_kwargs={
                     "k": 50,  # Increase from default (usually 4) to a much higher number
                     "score_threshold": 0.5,  # Only include relevant results (adjust as needed)
+                    "filter": [
+                        {"term": {"product_relationships": "product"}},
+                        {"term": {"metadata.category_id": self.category_id}},
+                    ],
                 },
             ),
             combine_docs_chain,
         )
 
-        prompt = """
-        Return the information of the five products in the index that most closely represent the product described the JSON at the end of this prompt.
+        prompt = f"""
+        Return the information of up to five indexed products that match the product described the JSON at the end of this prompt.
         The commercial model of the product is particularly important for this match
         
-        If there is no context of products just return an empty json list.
+        {self.category.ai_additional_prompt_instructions_for_similarity_search or ''}
+        
         The response must always be a valid json, with no additional commentaries or text
-
         The response must be in JSON format without backticks or other formatting, as an array of objects, each with the following keys:
         
         product_id: ID of the product.
@@ -1055,7 +1058,8 @@ class Entity(models.Model):
         if not self.is_visible:
             raise Exception("Entity has been marked as non-relevant")
 
-        if self.category.name not in self.AI_EXTRACTION_CATEGORIES:
+        if not self.category.ai_confidence_threshold_for_association:
+            # Category not managed by AI
             return
 
         try:
@@ -1074,7 +1078,11 @@ class Entity(models.Model):
         ]
         self.ai_association_similar_products = serialized_ai_matching_produt_data
 
-        if ai_similar_products_data and ai_similar_products_data[0]["confidence"] >= 95:
+        if (
+            ai_similar_products_data
+            and ai_similar_products_data[0]["confidence"]
+            >= self.category.ai_confidence_threshold_for_association
+        ):
             self.associate(
                 SoloTodoUser.get_bot(), ai_similar_products_data[0]["product"]
             )

@@ -166,7 +166,8 @@ def update_entity_sec_qr_codes(entity_id):
     max_retries=2,
     default_retry_delay=10,
 )
-def ai_associate_entity(entity_id):
+def ai_associate_entity(entity_id, update_category=True):
     entity = Entity.objects.get(pk=entity_id)
-    entity.ai_update_category()
+    if update_category:
+        entity.ai_update_category()
     entity.ai_associate()
