@@ -160,7 +160,7 @@ def update_entity_sec_qr_codes(entity_id):
 
 
 @shared_task(
-    queue="general",
+    queue="ai",
     ignore_result=True,
     autoretry_for=(Exception,),
     max_retries=2,
