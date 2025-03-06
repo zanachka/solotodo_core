@@ -234,7 +234,7 @@ class Entity(models.Model):
         ("https://schema.org/OpenBoxCondition", "Open Box"),
     ]
     CONDITION_CHOICES_DICT = dict(CONDITION_CHOICES)
-    DEFAULT_IMAGE = "products/Samsung_N130_Negro.jpg"
+    DEFAULT_IMAGE = "products/not_found.png"
     store = models.ForeignKey(Store, on_delete=models.CASCADE)
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
     scraped_category = models.ForeignKey(
@@ -953,7 +953,8 @@ class Entity(models.Model):
         if not picture_urls:
             return self.DEFAULT_IMAGE
 
-        session = self.store.scraper.get_session()
+        extra_args = self.store.storescraper_extra_args_as_json()
+        session = self.store.scraper.get_session(extra_args)
         response = session.get(picture_urls[0])
 
         if response.status_code != 200:

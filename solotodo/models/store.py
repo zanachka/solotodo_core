@@ -497,6 +497,12 @@ class Store(models.Model):
         file_for_upload = ContentFile(file_value)
         return file_for_upload
 
+    def storescraper_extra_args_as_json(self):
+        if self.storescraper_extra_args:
+            return json.loads(self.storescraper_extra_args)
+        else:
+            return {}
+
     class Meta:
         app_label = "solotodo"
         ordering = ["name"]
