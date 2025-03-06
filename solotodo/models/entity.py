@@ -943,11 +943,6 @@ class Entity(models.Model):
         return instance
 
     def get_instance_model_picture(self):
-        if self.product:
-            return self.product.instance_model.picture.url.split(
-                f"{MediaRootS3Boto3Storage.location}/"
-            )[-1]
-
         picture_urls = self.picture_urls_as_list()
 
         if not picture_urls:
