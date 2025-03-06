@@ -1,5 +1,9 @@
-from elasticsearch_dsl import Text, Keyword, Object, Integer, Date
+import json
+from langchain_core.documents import Document
+from elasticsearch_dsl import Text, Keyword, Object, Integer, Date, DenseVector
 from .es_product_entities import EsProductEntities
+
+from django.conf import settings
 
 
 class EsProduct(EsProductEntities):
@@ -17,6 +21,17 @@ class EsProduct(EsProductEntities):
     keywords = Text()
     specs = Object(dynamic=True)
     related_instance_model_ids = Integer(multi=True)
+
+    text = Text(fields={"keyword": Keyword()})
+    metadata = Object(
+        dynamic=True, properties={"source": Text(fields={"keyword": Keyword()})}
+    )
+    vector = DenseVector(
+        dims=3072,
+        index=True,
+        similarity="cosine",
+        index_options={"type": "int8_hnsw", "m": 16, "ef_construction": 100},
+    )
 
     @classmethod
     def search(cls, **kwargs):
@@ -42,6 +57,24 @@ class EsProduct(EsProductEntities):
         if "default_bucket" not in specs:
             specs["default_bucket"] = specs["id"]
 
+        # Vector fields
+        document_content = {"id": product.id}
+        for instance_field in product.instance_model.fields.select_related("field"):
+            if instance_field.field.model.name == "FileField":
+                continue
+            base_field_name = instance_field.field.name
+            field_value_candidate_1 = specs.get(base_field_name, None)
+            field_value_candidate_2 = specs.get(f"{base_field_name}_unicode", None)
+            document_content[base_field_name] = (
+                field_value_candidate_1 or field_value_candidate_2
+            )
+        page_content = json.dumps(document_content, sort_keys=True)
+        vector = settings.VECTOR_STORE.embedding.embed_documents([page_content])[0]
+        metadata = {
+            "id": product.id,
+            "category_id": product.category_id,
+        }
+
         return cls(
             product_id=product.id,
             name=str(product),
@@ -59,4 +92,7 @@ class EsProduct(EsProductEntities):
             related_instance_model_ids=related_instance_model_ids,
             product_relationships="product",
             meta={"id": "PRODUCT_{}".format(product.id)},
+            text=page_content,
+            vector=vector,
+            metadata=metadata,
         )

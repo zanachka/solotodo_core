@@ -11,3 +11,5 @@ cyber.tsv
 http_ca.crt
 elasticsearch-ca.pem
 *.csv
+.ipynb_checkpoints/
+*.ipynb
