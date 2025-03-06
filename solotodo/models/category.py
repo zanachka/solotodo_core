@@ -145,6 +145,9 @@ class Category(models.Model):
 
         return fields_annotation, fields_enum_choices
 
+    def is_ai_managed(self):
+        return bool(self.ai_confidence_threshold_for_association)
+
     class Meta:
         app_label = "solotodo"
         ordering = ["name"]

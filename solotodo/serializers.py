@@ -220,6 +220,7 @@ class CategorySerializer(serializers.HyperlinkedModelSerializer):
             "short_description_template",
             "browse_result_template",
             "detail_template",
+            "is_ai_managed",
         )
 
 
