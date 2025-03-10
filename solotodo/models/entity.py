@@ -950,7 +950,10 @@ class Entity(models.Model):
 
         extra_args = self.store.storescraper_extra_args_as_json()
         session = self.store.scraper.get_session(extra_args)
-        response = session.get(picture_urls[0])
+        try:
+            response = session.get(picture_urls[0])
+        except Exception:
+            return self.DEFAULT_IMAGE
 
         if response.status_code != 200:
             return self.DEFAULT_IMAGE
