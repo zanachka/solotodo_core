@@ -960,7 +960,7 @@ class Entity(models.Model):
         except UnidentifiedImageError:
             return self.DEFAULT_IMAGE
 
-        filename = f"products/{self.category.name.lower()}-{self.pk}-{int(time.time())}"
+        filename = f"products/{self.category.name.lower().encode('ascii', 'ignore')}-{self.pk}-{int(time.time())}"
         storage = MediaRootS3Boto3Storage()
         storage.save(filename, ContentFile(response.content))
         file_url = storage.url(filename)
