@@ -67,7 +67,7 @@ class Category(models.Model):
     detail_template = models.TextField(blank=True, null=True)
 
     ai_confidence_threshold_for_association = models.IntegerField(null=True, blank=True)
-    ai_additional_prompt_instructions_for_similarity_search = models.CharField(
+    ai_additional_prompt_instructions_for_similarity_search = models.TextField(
         null=True, blank=True
     )
 

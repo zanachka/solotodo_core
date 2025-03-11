@@ -863,7 +863,7 @@ class Entity(models.Model):
 
         tagging_prompt = ChatPromptTemplate.from_template(
             """
-            Determine the specifications of the product dscribed in the following JSON document. The field 'description' is in Markdown format
+            Determine the specifications of the product described in the following JSON document. The field 'description' is in Markdown format
             
             {input}
             """
@@ -969,22 +969,6 @@ class Entity(models.Model):
         file_url = storage.url(filename)
 
         return file_url.split(f"{MediaRootS3Boto3Storage.location}/")[-1]
-
-    def es_vector_search(self):
-        if not self.ai_inferred_product_data:
-            self.update_ai_inferred_product_data()
-
-        if self.ai_inferred_product_data["errors"]:
-            return None, None
-
-        for response, score in settings.VECTOR_STORE.similarity_search_with_score(
-            query=json.dumps(self.ai_inferred_product_data["fields"], sort_keys=True)
-        ):
-            if score > 0.97:
-                product = Product.objects.get(pk=response.metadata["id"])
-                return product, score
-
-        return None, None
 
     def ai_find_similar_products(self):
         retrieval_qa_chat_prompt = ChatPromptTemplate.from_messages(
