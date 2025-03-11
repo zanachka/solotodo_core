@@ -971,6 +971,12 @@ class Entity(models.Model):
         return file_url.split(f"{MediaRootS3Boto3Storage.location}/")[-1]
 
     def ai_find_similar_products(self):
+        if not self.ai_inferred_product_data:
+            self.update_ai_inferred_product_data()
+
+        if self.ai_inferred_product_data["errors"]:
+            raise Exception("The AI inferred product data has errors")
+
         retrieval_qa_chat_prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -999,8 +1005,10 @@ class Entity(models.Model):
         )
 
         prompt = f"""
-        Return the information of up to five indexed products that match the product described the JSON at the end of this prompt.
-        The commercial model of the product is particularly important for this match
+        Return the information of up to five indexed products that match the product described the JSON at the end of this prompt based on its brand, commercial model and technical specifications.
+        
+        The results brand should be similar to "{self.ai_inferred_product_data['fields']['brand']}"
+        The results commercial model should be similar to "{self.ai_inferred_product_data['fields']['commercial_model']}"
         
         {self.category.ai_additional_prompt_instructions_for_similarity_search or ''}
         
@@ -1009,10 +1017,14 @@ class Entity(models.Model):
         
         product_id: ID of the product.
         confidence: A number between 0 and 100 representing how confident you are that the product is of the same model as the queried one
-        reasoning: The reason of your response
+        reasoning: The reason of your response        
         """
+
+        query_product_dict = json.loads(self.ai_get_input())
+        query_product_dict.update(self.ai_inferred_product_data["fields"])
+
         response = retrieval_chain.invoke(
-            {"input": f"{prompt} \n {self.ai_get_input()}"}
+            {"input": f"{prompt} \n {json.dumps(query_product_dict)}"}
         )
         json_response = json.loads(response["answer"])
 

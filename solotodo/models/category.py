@@ -143,6 +143,17 @@ class Category(models.Model):
                     field_data,
                 )
 
+        if "commercial_model" not in fields_annotation:
+            fields_annotation["commercial_model"] = (
+                str,
+                Field(description="Modelo comercial, sin incluir marca"),
+            )
+        if "brand" not in fields_annotation:
+            fields_annotation["brand"] = (
+                str,
+                Field(description="Marca del producto"),
+            )
+
         return fields_annotation, fields_enum_choices
 
     def is_ai_managed(self):
