@@ -310,8 +310,7 @@ class Entity(models.Model):
     # this field uses the timestamp of the moment it is updated in the database
     last_pricing_update = models.DateTimeField()
 
-    ai_inferred_product_data = models.JSONField(null=True, blank=True)
-    ai_association_similar_products = models.JSONField(null=True, blank=True)
+    ai_association_result = models.JSONField(null=True, blank=True)
 
     objects = EntityQueryset.as_manager()
 
@@ -898,23 +897,17 @@ class Entity(models.Model):
                 else:
                     errors[field] = f"Choice not found: {value}"
 
+        for key in errors.keys():
+            if key != "general":
+                del response[key]
+
         return response, errors
 
-    def update_ai_inferred_product_data(self):
-        field_data, errors = self.ai_infer_product_data()
-        ai_inferred_product_data = {
-            "fields": field_data,
-            "errors": errors,
-        }
-        self.ai_inferred_product_data = ai_inferred_product_data
-        self.save()
-
-    def create_instance_model(self):
-        if not self.ai_inferred_product_data:
-            self.update_ai_inferred_product_data()
-
-        if self.ai_inferred_product_data["errors"]:
-            raise Exception("The AI inferred product data has errors")
+    def create_instance_model(self, inferred_product_data=None):
+        if not inferred_product_data:
+            inferred_product_data, errors = self.ai_infer_product_data()
+            if errors:
+                raise Exception("The AI inferred product data has errors")
 
         meta_model = self.category.meta_model
         fields = meta_model.fields.all()
@@ -927,7 +920,7 @@ class Entity(models.Model):
                 continue
 
             field_name = field.name
-            instance_value = self.ai_inferred_product_data["fields"][field_name]
+            instance_value = inferred_product_data[field_name]
 
             if field.model.is_primitive():
                 setattr(instance, field_name, instance_value)
@@ -970,12 +963,11 @@ class Entity(models.Model):
 
         return file_url.split(f"{MediaRootS3Boto3Storage.location}/")[-1]
 
-    def ai_find_similar_products(self):
-        if not self.ai_inferred_product_data:
-            self.update_ai_inferred_product_data()
-
-        if self.ai_inferred_product_data["errors"]:
-            raise Exception("The AI inferred product data has errors")
+    def ai_find_similar_products(self, inferred_product_data=None):
+        if not inferred_product_data:
+            inferred_product_data, errors = self.ai_infer_product_data()
+            if errors:
+                raise Exception("The AI inferred product data has errors")
 
         retrieval_qa_chat_prompt = ChatPromptTemplate.from_messages(
             [
@@ -1007,8 +999,8 @@ class Entity(models.Model):
         prompt = f"""
         Return the information of up to five indexed products that match the product described the JSON at the end of this prompt based on its brand, commercial model and technical specifications.
         
-        The results brand should be similar to "{self.ai_inferred_product_data['fields']['brand']}"
-        The results commercial model should be similar to "{self.ai_inferred_product_data['fields']['commercial_model']}"
+        The results brand should be similar to {inferred_product_data['fields']['brand']}
+        The results commercial model should be similar to {inferred_product_data['fields']['commercial_model']}
         
         {self.category.ai_additional_prompt_instructions_for_similarity_search or ''}
         
@@ -1021,7 +1013,7 @@ class Entity(models.Model):
         """
 
         query_product_dict = json.loads(self.ai_get_input())
-        query_product_dict.update(self.ai_inferred_product_data["fields"])
+        query_product_dict.update(inferred_product_data["fields"])
 
         response = retrieval_chain.invoke(
             {"input": f"{prompt} \n {json.dumps(query_product_dict)}"}
@@ -1047,6 +1039,20 @@ class Entity(models.Model):
         return result
 
     def ai_associate(self):
+        result = self._ai_associate()
+        self.ai_association_result = result
+        self.save()
+        return result
+
+    def _ai_associate(self):
+        result = {
+            "inferred_product_data": None,
+            "similar_product_entries": None,
+            "associated_product_id": None,
+            "product_created": None,
+            "errors": None,
+        }
+
         if self.product_id:
             raise Exception("Entity already associated")
 
@@ -1057,13 +1063,23 @@ class Entity(models.Model):
             # Category not managed by AI
             return
 
-        try:
-            ai_similar_products_data = self.ai_find_similar_products()
-        except Exception:
-            return
-        # print(ai_similar_products_data)
+        inferred_product_data, errors = self.ai_infer_product_data()
+        result["inferred_product_data"] = inferred_product_data
+        if errors:
+            result["errors"] = ", ".join(
+                [f"{key}: {value}" for key, value in errors.items()]
+            )
+            return result
 
-        serialized_ai_matching_produt_data = [
+        try:
+            ai_similar_products_data = self.ai_find_similar_products(
+                inferred_product_data
+            )
+        except Exception as e:
+            result["errors"] = str(e)
+            return result
+
+        serialized_ai_matching_product_data = [
             {
                 "product_id": x["product"].id,
                 "confidence": x["confidence"],
@@ -1071,7 +1087,7 @@ class Entity(models.Model):
             }
             for x in ai_similar_products_data
         ]
-        self.ai_association_similar_products = serialized_ai_matching_produt_data
+        result["similar_product_entries"] = serialized_ai_matching_product_data
 
         if (
             ai_similar_products_data
@@ -1081,16 +1097,15 @@ class Entity(models.Model):
             self.associate(
                 SoloTodoUser.get_bot(), ai_similar_products_data[0]["product"]
             )
+            result["associated_product_id"] = ai_similar_products_data[0]["product"].id
+            result["product_created"] = False
         else:
-            if not self.ai_inferred_product_data:
-                self.update_ai_inferred_product_data()
-
-            if self.ai_inferred_product_data["errors"]:
-                return
-
-            instance_model = self.create_instance_model()
+            instance_model = self.create_instance_model(inferred_product_data)
             product = Product.objects.get(instance_model=instance_model)
             self.associate(SoloTodoUser.get_bot(), product)
+            result["associated_product_id"] = product.id
+            result["product_created"] = True
+        return result
 
     def ai_update_category(self):
         if self.product_id:
