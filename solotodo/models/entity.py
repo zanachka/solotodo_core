@@ -1045,14 +1045,6 @@ class Entity(models.Model):
         return result
 
     def _ai_associate(self):
-        result = {
-            "inferred_product_data": None,
-            "similar_product_entries": None,
-            "associated_product_id": None,
-            "product_created": None,
-            "errors": None,
-        }
-
         if self.product_id:
             raise Exception("Entity already associated")
 
@@ -1060,8 +1052,15 @@ class Entity(models.Model):
             raise Exception("Entity has been marked as non-relevant")
 
         if not self.category.ai_confidence_threshold_for_association:
-            # Category not managed by AI
-            return
+            raise Exception("Category not managed by AI")
+
+        result = {
+            "inferred_product_data": None,
+            "similar_product_entries": None,
+            "associated_product_id": None,
+            "product_created": None,
+            "errors": None,
+        }
 
         inferred_product_data, errors = self.ai_infer_product_data()
         result["inferred_product_data"] = inferred_product_data
