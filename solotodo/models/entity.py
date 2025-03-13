@@ -999,8 +999,8 @@ class Entity(models.Model):
         prompt = f"""
         Return the information of up to five indexed products that match the product described the JSON at the end of this prompt based on its brand, commercial model and technical specifications.
         
-        The results brand should be similar to {inferred_product_data['fields']['brand']}
-        The results commercial model should be similar to {inferred_product_data['fields']['commercial_model']}
+        The results brand should be similar to {inferred_product_data['brand']}
+        The results commercial model should be similar to {inferred_product_data['commercial_model']}
         
         {self.category.ai_additional_prompt_instructions_for_similarity_search or ''}
         
@@ -1013,7 +1013,7 @@ class Entity(models.Model):
         """
 
         query_product_dict = json.loads(self.ai_get_input())
-        query_product_dict.update(inferred_product_data["fields"])
+        query_product_dict.update(inferred_product_data)
 
         response = retrieval_chain.invoke(
             {"input": f"{prompt} \n {json.dumps(query_product_dict)}"}
