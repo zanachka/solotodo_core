@@ -1286,7 +1286,13 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        return JsonResponse(serializer.data)
+        entity_serializer = EntitySerializer(entity, context={"request": request})
+        result = {
+            'entity': entity_serializer.data,
+            'ai_association_result': serializer.data
+        }
+
+        return JsonResponse(result)
 
 
 class EntityHistoryViewSet(viewsets.ReadOnlyModelViewSet):
