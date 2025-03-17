@@ -967,7 +967,12 @@ class Entity(models.Model):
         if not inferred_product_data:
             inferred_product_data, errors = self.ai_infer_product_data()
             if errors:
-                raise Exception("The AI inferred product data has errors")
+                errors_text = ", ".join(
+                    [f"{key}: {value}" for key, value in errors.items()]
+                )
+                raise Exception(
+                    "The AI inferred product data has errors: " + errors_text
+                )
 
         retrieval_qa_chat_prompt = ChatPromptTemplate.from_messages(
             [

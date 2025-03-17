@@ -166,6 +166,7 @@ from solotodo.serializers import (
     BundleSerializer,
     BundleModelSerializer,
     EntityAiAssociationResultSerializer,
+    EntityAiSimilarProductEntrySerializer,
 )
 from solotodo.tasks import store_update, send_historic_entity_positions_report_task
 from solotodo.utils import get_client_ip, iterable_to_dict
@@ -1237,6 +1238,51 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = EntityAiAssociationResultSerializer(
             data=entity.ai_association_result
         )
+        if not serializer.is_valid():
+            return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        return JsonResponse(serializer.data)
+
+    @action(detail=True)
+    def ai_find_similar_products(self, request, pk):
+        entity = self.get_object()
+        if not entity.user_has_staff_perms(request.user):
+            raise PermissionDenied
+
+        try:
+            similar_products = entity.ai_find_similar_products()
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = EntityAiSimilarProductEntrySerializer(similar_products, many=True)
+        return JsonResponse(serializer.data, safe=False)
+
+    @action(detail=True, methods=["post"])
+    def ai_update_category(self, request, pk):
+        entity = self.get_object()
+        if not entity.user_has_staff_perms(request.user):
+            raise PermissionDenied
+
+        try:
+            entity.ai_update_category()
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = EntitySerializer(entity, context={"request": request})
+        return JsonResponse(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def ai_associate(self, request, pk):
+        entity = self.get_object()
+        if not entity.user_has_staff_perms(request.user):
+            raise PermissionDenied
+
+        try:
+            result = entity.ai_associate()
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = EntityAiAssociationResultSerializer(data=result)
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
