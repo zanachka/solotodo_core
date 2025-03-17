@@ -10,7 +10,7 @@ from django.core.files.base import ContentFile
 from django.core.mail import send_mail
 from django.db import models, IntegrityError
 from django.db.models import Avg, Count, Min, Max
-from django.http import Http404
+from django.http import Http404, JsonResponse
 from django.utils import timezone
 from django_filters import rest_framework
 from geoip2.errors import AddressNotFoundError
@@ -165,6 +165,7 @@ from solotodo.serializers import (
     StaffProductSerializer,
     BundleSerializer,
     BundleModelSerializer,
+    EntityAiAssociationResultSerializer,
 )
 from solotodo.tasks import store_update, send_historic_entity_positions_report_task
 from solotodo.utils import get_client_ip, iterable_to_dict
@@ -1223,6 +1224,23 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
         entity = self.get_object()
         data = entity.sec_info()
         return Response(data)
+
+    @action(detail=True)
+    def ai_association_result(self, request, pk):
+        entity = self.get_object()
+        if not entity.user_has_staff_perms(request.user):
+            raise PermissionDenied
+
+        if not entity.ai_association_result:
+            raise Http404
+
+        serializer = EntityAiAssociationResultSerializer(
+            data=entity.ai_association_result
+        )
+        if not serializer.is_valid():
+            return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        return JsonResponse(serializer.data)
 
 
 class EntityHistoryViewSet(viewsets.ReadOnlyModelViewSet):

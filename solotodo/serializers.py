@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from guardian.utils import get_anonymous_user
 from rest_framework import serializers
+from rest_framework.fields import DictField
 from rest_framework.reverse import reverse
 
 from hardware.models import Budget
@@ -777,3 +778,58 @@ class ProductVideoSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = ProductVideo
         fields = ("id", "url", "youtube_id", "name", "conditions")
+
+
+class EntityAiNestedProductSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(read_only=True, source="__str__")
+
+    class Meta:
+        model = Product
+        fields = ("id", "name")
+
+
+class EntityAiSimilarProductEntrySerializer(serializers.Serializer):
+    product = EntityAiNestedProductSerializer(allow_null=True, required=False)
+    confidence = serializers.IntegerField()
+    reasoning = serializers.CharField()
+
+    def to_internal_value(self, data):
+        try:
+            product = Product.objects.get(pk=data["product_id"])
+        except Product.DoesNotExist:
+            product = None
+
+        return {
+            "product": product,
+            "confidence": data["confidence"],
+            "reasoning": data["reasoning"],
+        }
+
+
+class EntityAiAssociationResultSerializer(serializers.Serializer):
+    inferred_product_data = serializers.DictField(allow_null=True, allow_empty=True)
+    similar_product_entries = serializers.ListField(
+        child=EntityAiSimilarProductEntrySerializer(), allow_null=True, allow_empty=True
+    )
+    associated_product = EntityAiNestedProductSerializer(
+        allow_null=True, required=False
+    )
+    product_created = serializers.BooleanField(allow_null=True)
+    errors = DictField(allow_null=True)
+
+    def to_internal_value(self, data):
+        result = super(EntityAiAssociationResultSerializer, self).to_internal_value(
+            data
+        )
+
+        if data["associated_product_id"]:
+            try:
+                product = Product.objects.get(pk=data["associated_product_id"])
+            except Product.DoesNotExist:
+                product = None
+        else:
+            product = None
+
+        result["associated_product"] = product
+
+        return result

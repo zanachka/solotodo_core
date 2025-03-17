@@ -1065,9 +1065,7 @@ class Entity(models.Model):
         inferred_product_data, errors = self.ai_infer_product_data()
         result["inferred_product_data"] = inferred_product_data
         if errors:
-            result["errors"] = ", ".join(
-                [f"{key}: {value}" for key, value in errors.items()]
-            )
+            result["errors"] = errors
             return result
 
         try:
@@ -1075,7 +1073,7 @@ class Entity(models.Model):
                 inferred_product_data
             )
         except Exception as e:
-            result["errors"] = str(e)
+            result["errors"] = {"general": str(e)}
             return result
 
         serialized_ai_matching_product_data = [
