@@ -1294,6 +1294,21 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
 
         return JsonResponse(result)
 
+    @action(detail=True)
+    def ai_infer_product_data(self, request, pk):
+        entity = self.get_object()
+        if not entity.user_has_staff_perms(request.user):
+            raise PermissionDenied
+
+        inferred_product_data, errors = entity.ai_infer_product_data()
+
+        result = {
+            "inferred_product_data": inferred_product_data,
+            "errors": errors,
+        }
+
+        return JsonResponse(result)
+
 
 class EntityHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = EntityHistory.objects.all()
