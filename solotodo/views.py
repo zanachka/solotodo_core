@@ -1288,8 +1288,8 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
 
         entity_serializer = EntitySerializer(entity, context={"request": request})
         result = {
-            'entity': entity_serializer.data,
-            'ai_association_result': serializer.data
+            "entity": entity_serializer.data,
+            "ai_association_result": serializer.data,
         }
 
         return JsonResponse(result)
