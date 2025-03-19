@@ -871,19 +871,42 @@ class Entity(models.Model):
             is_optional = field_data.default is None
             field_enum_choices = fields_enum_choices.get(field, None)
 
-            if value is None and not is_optional:
-                errors[field] = "Not found"
-                continue
+            def clean_value(singular_value):
+                if singular_value == "null" and is_optional:
+                    return None, 100
 
-            if value and field_enum_choices and value not in field_enum_choices:
-                uppercase_field_enum_choices_dict = {
-                    x: x.upper() for x in field_enum_choices
-                }
-                uppercase_best_match, score, best_match = rapidfuzz.process.extractOne(
-                    value.upper(), uppercase_field_enum_choices_dict
-                )
+                if (
+                    singular_value
+                    and field_enum_choices
+                    and singular_value not in field_enum_choices
+                ):
+                    uppercase_field_enum_choices_dict = {
+                        x: x.upper() for x in field_enum_choices
+                    }
+                    uppercase_best_match, score, best_match = (
+                        rapidfuzz.process.extractOne(
+                            singular_value.upper(), uppercase_field_enum_choices_dict
+                        )
+                    )
+                    return best_match, score
+                else:
+                    return singular_value, 100
+
+            if isinstance(value, list):
+                cleaned_fields = []
+                for value_entry in value:
+                    cleaned_value, score = clean_value(value_entry)
+                    if score >= 90:
+                        cleaned_fields.append(cleaned_value)
+                    else:
+                        errors[field] = f"Choice not found: {value}"
+                        break
+                else:
+                    response[field] = cleaned_fields
+            else:
+                cleaned_value, score = clean_value(value)
                 if score >= 90:
-                    response[field] = best_match
+                    response[field] = cleaned_value
                 else:
                     errors[field] = f"Choice not found: {value}"
 
@@ -914,7 +937,12 @@ class Entity(models.Model):
 
             if field.model.is_primitive():
                 setattr(instance, field_name, instance_value)
-            else:
+            elif field.multiple:
+                field_instances = field.model.instancemodel_set.filter(
+                    unicode_representation__in=instance_value
+                )
+                setattr(instance, field_name, field_instances)
+            elif instance_value:
                 field_instance = field.model.instancemodel_set.get(
                     unicode_representation=instance_value
                 )

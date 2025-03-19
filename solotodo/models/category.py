@@ -138,8 +138,12 @@ class Category(models.Model):
                 field_data.description += (
                     ". Choose from predefined options or suggest a new one if none fit."
                 )
+                if field.multiple:
+                    field_type = list[Union[enum, str]]
+                else:
+                    field_type = Union[enum, str]
                 fields_annotation[field.name] = (
-                    Union[enum, str],
+                    field_type,
                     field_data,
                 )
 
