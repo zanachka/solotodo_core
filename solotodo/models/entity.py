@@ -912,10 +912,10 @@ class Entity(models.Model):
 
         return response, errors
 
-    def create_instance_model(self, inferred_product_data=None):
+    def create_instance_model(self, inferred_product_data=None, ignore_errors=False):
         if not inferred_product_data:
             inferred_product_data, errors = self.ai_infer_product_data()
-            if errors:
+            if errors and not ignore_errors:
                 raise Exception("The AI inferred product data has errors")
 
         meta_model = self.category.meta_model
