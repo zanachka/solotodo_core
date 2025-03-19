@@ -898,11 +898,7 @@ class Entity(models.Model):
                     cleaned_value, score = clean_value(value_entry)
                     if score >= 90:
                         cleaned_fields.append(cleaned_value)
-                    else:
-                        errors[field] = f"Choice not found: {value}"
-                        break
-                else:
-                    response[field] = cleaned_fields
+                response[field] = cleaned_fields
             else:
                 cleaned_value, score = clean_value(value)
                 if score >= 90:
