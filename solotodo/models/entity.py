@@ -929,7 +929,10 @@ class Entity(models.Model):
                 continue
 
             field_name = field.name
-            instance_value = inferred_product_data[field_name]
+            instance_value = inferred_product_data.get(field_name, None)
+
+            if not instance_value:
+                continue
 
             if field.model.is_primitive():
                 setattr(instance, field_name, instance_value)
