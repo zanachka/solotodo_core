@@ -758,18 +758,8 @@ class Entity(models.Model):
         return None
 
     def update_sec_qr_codes(self):
-        if self.store.storescraper_extra_args:
-            extra_args = json.loads(self.store.storescraper_extra_args)
-        else:
-            extra_args = None
-        session = session_with_proxy(extra_args)
-        if not extra_args or "user-agent" not in extra_args:
-            session.headers["user-agent"] = (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/116.0.0.0 Safari/537.36"
-            )
-
+        extra_args = self.store.storescraper_extra_args_as_json()
+        session = self.store.scraper.get_session(extra_args)
         picture_urls = self.picture_urls_as_list() or []
 
         qr_codes = set()
@@ -1030,6 +1020,9 @@ class Entity(models.Model):
             try:
                 matching_product = Product.objects.get(pk=entry["product_id"])
             except Product.DoesNotExist:
+                # AI hallucinates product IDs sometimes
+                continue
+            except ValueError:
                 # AI hallucinates product IDs sometimes
                 continue
 
