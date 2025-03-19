@@ -912,7 +912,7 @@ class Entity(models.Model):
 
         return response, errors
 
-    def create_instance_model(self, inferred_product_data=None, ignore_errors=False):
+    def ai_create_product(self, inferred_product_data=None, ignore_errors=False):
         if not inferred_product_data:
             inferred_product_data, errors = self.ai_infer_product_data()
             if errors and not ignore_errors:
@@ -931,7 +931,7 @@ class Entity(models.Model):
             field_name = field.name
             instance_value = inferred_product_data.get(field_name, None)
 
-            if not instance_value:
+            if instance_value is None:
                 continue
 
             if field.model.is_primitive():
@@ -949,8 +949,8 @@ class Entity(models.Model):
 
         instance.picture = self.get_instance_model_picture()
         instance.save(creator_id=SoloTodoUser.get_bot().pk)
-
-        return instance
+        product = Product.objects.get(instance_model=instance)
+        return product
 
     def get_instance_model_picture(self):
         picture_urls = self.picture_urls_as_list()
@@ -1122,8 +1122,7 @@ class Entity(models.Model):
             result["associated_product_id"] = ai_similar_products_data[0]["product"].id
             result["product_created"] = False
         else:
-            instance_model = self.create_instance_model(inferred_product_data)
-            product = Product.objects.get(instance_model=instance_model)
+            product = self.ai_create_product(inferred_product_data)
             self.associate(SoloTodoUser.get_bot(), product)
             result["associated_product_id"] = product.id
             result["product_created"] = True

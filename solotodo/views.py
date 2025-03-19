@@ -57,6 +57,9 @@ from solotodo.filters import (
 from solotodo.forms.date_range_form import DateRangeForm
 from solotodo.forms.entity_association_form import EntityAssociationForm
 from solotodo.forms.entity_by_url_form import EntityByUrlForm
+from solotodo.forms.entity_ai_create_product_form import (
+    EntityAiCreateProductForm,
+)
 from solotodo.forms.entity_dissociation_form import EntityDisssociationForm
 from solotodo.forms.entity_estimated_sales_form import EntityEstimatedSalesForm
 from solotodo.forms.product_analytics_form import ProductAnalyticsForm
@@ -167,6 +170,7 @@ from solotodo.serializers import (
     BundleModelSerializer,
     EntityAiAssociationResultSerializer,
     EntityAiSimilarProductEntrySerializer,
+    EntityAiNestedProductSerializer,
 )
 from solotodo.tasks import store_update, send_historic_entity_positions_report_task
 from solotodo.utils import get_client_ip, iterable_to_dict
@@ -1308,6 +1312,26 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
         }
 
         return JsonResponse(result)
+
+    @action(detail=True, methods=["post"])
+    def ai_create_product(self, request, pk):
+        entity = self.get_object()
+        if not entity.user_has_staff_perms(request.user):
+            raise PermissionDenied
+
+        form = EntityAiCreateProductForm(request.data)
+        if not form.is_valid():
+            return JsonResponse(form.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            product = entity.ai_create_product(
+                ignore_errors=form.cleaned_data["ignore_errors"]
+            )
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = EntityAiNestedProductSerializer(product)
+        return JsonResponse(serializer.data)
 
 
 class EntityHistoryViewSet(viewsets.ReadOnlyModelViewSet):
