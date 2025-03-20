@@ -816,6 +816,9 @@ class Entity(models.Model):
             "url": self.url,
         }
 
+        if self.part_number:
+            data["manufacturer_part_number"] = self.part_number
+
         return json.dumps(data)
 
     def ai_infer_category(self):
@@ -1005,10 +1008,10 @@ class Entity(models.Model):
         )
         retrieval_chain = create_retrieval_chain(
             settings.VECTOR_STORE.as_retriever(
-                search_type="similarity",  # Can also try "mmr" for diversity
+                search_type="similarity",
                 search_kwargs={
-                    "k": 50,  # Increase from default (usually 4) to a much higher number
-                    "score_threshold": 0.5,  # Only include relevant results (adjust as needed)
+                    "k": 50,
+                    "score_threshold": 0.5,
                     "filter": [
                         {"term": {"product_relationships": "product"}},
                         {"term": {"metadata.category_id": self.category_id}},
