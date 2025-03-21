@@ -951,7 +951,16 @@ class Entity(models.Model):
                 setattr(instance, field_name, field_instance)
 
         instance.picture = self.get_instance_model_picture()
-        instance.save(creator_id=SoloTodoUser.get_bot().pk)
+        try:
+            instance.save(creator_id=SoloTodoUser.get_bot().pk)
+        except Exception as e:
+            # Instance saving may fail if the ignore_errors flags is True but one of the fields with errors is used
+            # to calculate important params of the associated product (its brand, for example)
+            instance.delete()
+            raise Exception(
+                "Product could not be created due to errors in the inferred data"
+            )
+
         product = Product.objects.get(instance_model=instance)
         return product
 
