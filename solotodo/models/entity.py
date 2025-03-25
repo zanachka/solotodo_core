@@ -880,22 +880,30 @@ class Entity(models.Model):
                 if singular_value == "null" and is_optional:
                     return None, 100
 
+                if isinstance(singular_value, str):
+                    decoded_singular_value = singular_value.encode().decode(
+                        "unicode_escape"
+                    )
+                else:
+                    decoded_singular_value = singular_value
+
                 if (
-                    singular_value
+                    decoded_singular_value
                     and field_enum_choices
-                    and singular_value not in field_enum_choices
+                    and decoded_singular_value not in field_enum_choices
                 ):
                     uppercase_field_enum_choices_dict = {
                         x: x.upper() for x in field_enum_choices
                     }
                     uppercase_best_match, score, best_match = (
                         rapidfuzz.process.extractOne(
-                            singular_value.upper(), uppercase_field_enum_choices_dict
+                            decoded_singular_value.upper(),
+                            uppercase_field_enum_choices_dict,
                         )
                     )
                     return best_match, score
                 else:
-                    return singular_value, 100
+                    return decoded_singular_value, 100
 
             if isinstance(value, list):
                 cleaned_fields = []
