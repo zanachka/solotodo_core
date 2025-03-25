@@ -114,7 +114,7 @@ class Category(models.Model):
 
         for field in self.meta_model.fields.all():
             field_type = field.model.name
-            field_data = Field(description=field.help_text)
+            field_data = Field(description=field.help_text or "")
 
             if field.nullable:
                 field_data.default = None
