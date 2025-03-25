@@ -33,7 +33,6 @@ from .coupon import Coupon
 from .es_product import EsProduct
 from solotodo.utils import iterable_to_dict, fetch_sec_fields
 from solotodo_core.s3utils import MediaRootS3Boto3Storage
-from storescraper.utils import session_with_proxy
 from metamodel.models import InstanceModel
 
 
@@ -818,6 +817,9 @@ class Entity(models.Model):
 
         if self.part_number:
             data["manufacturer_part_number"] = self.part_number
+
+        if self.sec_qr_codes and self.sec_qr_codes != "0":
+            data["sec_qr_codes"] = self.sec_qr_codes
 
         return json.dumps(data)
 
