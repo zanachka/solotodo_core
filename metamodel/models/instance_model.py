@@ -72,11 +72,18 @@ class InstanceModel(models.Model):
             if mtype == "DecimalField":
                 return self.decimal_value
             if mtype == "FileField":
-                return FieldFile(
-                    default_storage.open(self.unicode_value),
-                    FileField(),
-                    self.unicode_value,
-                )
+                try:
+                    return FieldFile(
+                        default_storage.open(self.unicode_value),
+                        FileField(),
+                        self.unicode_value,
+                    )
+                except FileNotFoundError:
+                    return FieldFile(
+                        default_storage.open("products/not_found.png"),
+                        FileField(),
+                        "products/not_found.png",
+                    )
             if mtype == "IntegerField":
                 return int(self.decimal_value)
 
