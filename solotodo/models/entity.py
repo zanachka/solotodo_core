@@ -881,9 +881,7 @@ class Entity(models.Model):
                     return None, 100
 
                 if isinstance(singular_value, str):
-                    decoded_singular_value = singular_value.encode().decode(
-                        "unicode_escape"
-                    )
+                    decoded_singular_value = singular_value.replace("\\", "")
                 else:
                     decoded_singular_value = singular_value
 
