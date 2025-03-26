@@ -606,7 +606,7 @@ class InstanceModel(models.Model):
 
         InstanceField.objects.bulk_create(new_instance_fields)
 
-        for label_field in ["name", "part_number"]:
+        for label_field in ["name", "commercial_model", "part_number"]:
             try:
                 original_value = getattr(cloned_instance, label_field)
                 if original_value is None:
