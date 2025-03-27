@@ -1090,9 +1090,6 @@ class Entity(models.Model):
         return result
 
     def _ai_associate(self):
-        if self.product_id:
-            raise Exception("Entity already associated")
-
         if not self.is_visible:
             raise Exception("Entity has been marked as non-relevant")
 
