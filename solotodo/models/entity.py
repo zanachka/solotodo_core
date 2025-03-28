@@ -880,7 +880,7 @@ class Entity(models.Model):
                 if singular_value == "null" and is_optional:
                     return None, 100
 
-                if isinstance(singular_value, str):
+                if isinstance(singular_value, str) and "\\" in singular_value:
                     decoded_singular_value = singular_value.encode().decode(
                         "unicode_escape"
                     )
