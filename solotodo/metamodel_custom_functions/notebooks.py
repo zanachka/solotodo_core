@@ -165,7 +165,7 @@ def additional_es_fields(elastic_search_result, model_name):
             elastic_search_result, ["width", "height", "thickness"]
         )
         result["model_name"] = "{} {}".format(
-            elastic_search_result["family_line_name"],
+            elastic_search_result.get("family_line_name", ""),
             elastic_search_result["commercial_model"],
         ).strip()
         result["pretty_dedicated_video_card"] = pretty_dedicated_video_card
