@@ -14,37 +14,14 @@ def additional_es_fields(elastic_search_original, model_name):
     m = model_name
     big_value = 1000 * 1000 * 1000 * 100000
     result = {}
-    if m == "Camera":
-        pretty_screen = elastic_search_original["screen_size_unicode"]
-        is_screen_touch = elastic_search_original["is_screen_touch"]
-        result["pretty_screen"] = pretty_screen
-        if is_screen_touch:
-            result["pretty_screen"] += " táctil"
-
-        result["pretty_dimensions"] = pretty_dimensions(elastic_search_original)
-        result["pretty_weight"] = format_optional_field(
-            elastic_search_original["weight"], "g"
-        )
-
-        aperture_speed = elastic_search_original["aperture_speed"]
-        if aperture_speed:
-            result["pretty_aperture_speed"] = "1/{}".format(aperture_speed)
-        else:
-            result["pretty_aperture_speed"] = "Desconocido"
-
-        result["model_name"] = "{} {}".format(
-            elastic_search_original["line_name"], elastic_search_original["name"]
-        ).strip()
-
-        return result
-
     if m == "Television":
         result["pretty_usb_ports"] = format_optional_field(
             elastic_search_original["usb_ports"], value_if_false="No posee"
         )
         result["pretty_video_ports"] = pretty_video_ports(elastic_search_original)
         result["model_name"] = "{} {}".format(
-            elastic_search_original["line_name"], elastic_search_original["name"]
+            elastic_search_original["line_name"],
+            elastic_search_original["commercial_model"],
         ).strip()
         result["brand_unicode"] = elastic_search_original["line_brand_unicode"]
 
