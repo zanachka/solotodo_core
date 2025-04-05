@@ -274,7 +274,8 @@ def additional_es_fields(elastic_search_original, model_name):
         battery_mah = elastic_search_original["battery_mah"]
         result["pretty_battery"] = format_optional_field(battery_mah, "mAh")
         result["model_name"] = "{} {}".format(
-            elastic_search_original["line_name"], elastic_search_original["name"]
+            elastic_search_original["line_name"],
+            elastic_search_original["commercial_model"],
         ).strip()
 
         # General score computation
