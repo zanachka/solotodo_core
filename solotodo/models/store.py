@@ -40,7 +40,7 @@ class StoreQuerySet(models.QuerySet):
 
     def filter_by_banners_support(self):
         stores_with_banner_compatibility = []
-        for store in self:
+        for store in self.filter(last_activation__isnull=False):
             try:
                 _ = store.scraper.banners
                 stores_with_banner_compatibility.append(store)
