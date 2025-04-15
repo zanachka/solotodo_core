@@ -17,7 +17,7 @@ class Command(BaseCommand):
             response = session.get(target_url)
             checks = [
                 "198646195fd16dfedce75f3ff6bc8708",
-                "925ac26efc5402996eae22777ae34362",
+                "37c986208ba081643513a4c2b2dbd080",
                 "edd239717c86",
             ]
             for check in checks:
