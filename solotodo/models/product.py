@@ -4,6 +4,7 @@ import re
 
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.storage import default_storage
 from django.core.validators import validate_comma_separated_integer_list
@@ -11,6 +12,7 @@ from django.db import models, IntegrityError
 from django.db.models import Q
 from django.db.models.deletion import Collector
 from django.utils.text import slugify
+from langchain_core.prompts import ChatPromptTemplate
 from sklearn.neighbors import NearestNeighbors
 from scipy.spatial import distance
 
@@ -132,6 +134,30 @@ class Product(models.Model):
         if not self._es_entry:
             self._es_entry = EsProduct.get("PRODUCT_" + str(self.id)).to_dict()
         return self._es_entry["specs"]
+
+    @property
+    def ai_specs(self):
+        specs = {}
+
+        for field in self.instance_model.fields.all():
+            field_type = field.field.model.name
+            field_name = field.field.name
+            field_value = field.value
+
+            if field_type == "FileField":
+                continue
+            elif field_type == "CharField":
+                specs[field_name] = field_value.unicode_value
+            elif field_type == "IntegerField":
+                specs[field_name] = int(field_value.decimal_value)
+            elif field_type == "BooleanField":
+                specs[field_name] = "Yes" if field_value.unicode_value else "No"
+            elif field_type == "DecimalField":
+                specs[field_name] = field_value.decimal_value
+            else:
+                specs[field_name] = field_value.unicode_representation
+
+        return specs
 
     @property
     def keywords(self):
@@ -573,6 +599,30 @@ class Product(models.Model):
 
             result.append({"label": watcher.name, "pending_fields": pending_fields})
         return result
+
+    def ai_generate_seo_description(self):
+        tagging_prompt = ChatPromptTemplate.from_template(
+            """
+            Usando la información proporcionada, redacta una descripción de producto optimizada para SEO en formato markdown. 
+            La información debe organizarse en el siguiente orden:
+
+            - Un párrafo introductorio que describa el producto de forma atractiva.
+            - Un párrafo con las características más destacadas.
+            - Un listado con 5 especificaciones técnicas relevantes.
+
+            No uses encabezados ni añadas comentarios adicionales.
+
+            Información: {input}
+            """
+        )
+
+        descriptions = [e.description for e in self.entity_set.all() if e.description]
+        input = f"{self.ai_specs}\n{". \n".join(descriptions)}"
+        prompt = tagging_prompt.invoke({"input": input})
+        llm = settings.LLM
+        seo_description = llm.invoke(prompt)
+
+        return seo_description.content
 
     def vector_distance(self, other_product):
         from .es_product import EsProduct
