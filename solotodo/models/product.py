@@ -633,10 +633,11 @@ class Product(models.Model):
         return seo_description.content
 
     def update_ai_description(self):
-        es_product = EsProduct.get_by_product_id(self.pk)
         page_content = json.dumps(self.ai_generate_seo_description())
         vector = settings.VECTOR_STORE.embedding.embed_documents([page_content])[0]
-        es_product.summary_text = json.dumps(page_content)
+
+        es_product = EsProduct.get_by_product_id(self.pk)
+        es_product.summary_text = page_content
         es_product.summary_vector = vector
         es_product.save()
 
