@@ -603,14 +603,11 @@ class Product(models.Model):
     def ai_generate_description(self):
         tagging_prompt = ChatPromptTemplate.from_template(
             """
-            Usando la información proporcionada redacta una descripción neutral y objetiva del producto,
-            optimizada para SEO y en formato markdown. 
+            Usando la información proporcionada redacta una descripción neutral y objetiva del producto optimizada para SEO, en formato markdown y que siga este orden:
 
             - Un párrafo introductorio que describa el producto de forma atractiva.
             - Un párrafo con las características más destacadas.
-            - Un listado con 5 especificaciones técnicas relevantes.
-
-            No uses encabezados ni añadas comentarios adicionales.
+            - Un listado con las 5 especificaciones técnicas más destacables.
 
             Información: {input}
             """
@@ -633,7 +630,7 @@ class Product(models.Model):
         return seo_description.content
 
     def update_ai_description(self):
-        page_content = json.dumps(self.ai_generate_description())
+        page_content = self.ai_generate_description()
         vector = settings.VECTOR_STORE.embedding.embed_documents([page_content])[0]
 
         es_product = EsProduct.get_by_product_id(self.pk)
