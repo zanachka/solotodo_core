@@ -23,10 +23,17 @@ class EsProduct(EsProductEntities):
     related_instance_model_ids = Integer(multi=True)
 
     text = Text(fields={"keyword": Keyword()})
+    summary_text = Text(fields={"keyword": Keyword()})
     metadata = Object(
         dynamic=True, properties={"source": Text(fields={"keyword": Keyword()})}
     )
     vector = DenseVector(
+        dims=3072,
+        index=True,
+        similarity="cosine",
+        index_options={"type": "int8_hnsw", "m": 16, "ef_construction": 100},
+    )
+    summary_vector = DenseVector(
         dims=3072,
         index=True,
         similarity="cosine",

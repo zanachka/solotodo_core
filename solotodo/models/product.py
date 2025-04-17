@@ -600,11 +600,11 @@ class Product(models.Model):
             result.append({"label": watcher.name, "pending_fields": pending_fields})
         return result
 
-    def ai_generate_seo_description(self):
+    def ai_generate_description(self):
         tagging_prompt = ChatPromptTemplate.from_template(
             """
-            Usando la información proporcionada, redacta una descripción de producto optimizada para SEO en formato markdown. 
-            La información debe organizarse en el siguiente orden:
+            Usando la información proporcionada redacta una descripción neutral y objetiva del producto,
+            optimizada para SEO y en formato markdown. 
 
             - Un párrafo introductorio que describa el producto de forma atractiva.
             - Un párrafo con las características más destacadas.
@@ -615,14 +615,30 @@ class Product(models.Model):
             Información: {input}
             """
         )
+        related_entities = self.entity_set
 
-        descriptions = [e.description for e in self.entity_set.all() if e.description]
-        input = f"{self.ai_specs}\n{". \n".join(descriptions)}"
+        if related_entities:
+            descriptions = [
+                e.description
+                for e in related_entities.filter(description__isnull=False)
+            ]
+            input = f"{self.ai_specs}\n\n{".\n\n".join(descriptions)}"
+        else:
+            input = f"{self.ai_specs}"
+
         prompt = tagging_prompt.invoke({"input": input})
         llm = settings.LLM
         seo_description = llm.invoke(prompt)
 
         return seo_description.content
+
+    def update_ai_description(self):
+        es_product = EsProduct.get_by_product_id(self.pk)
+        page_content = json.dumps(self.ai_generate_seo_description())
+        vector = settings.VECTOR_STORE.embedding.embed_documents([page_content])[0]
+        es_product.summary_text = json.dumps(page_content)
+        es_product.summary_vector = vector
+        es_product.save()
 
     def vector_distance(self, other_product):
         from .es_product import EsProduct
