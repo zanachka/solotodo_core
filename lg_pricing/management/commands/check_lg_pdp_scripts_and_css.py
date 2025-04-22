@@ -9,20 +9,20 @@ from solotodo.models import SoloTodoUser
 
 
 class Command(BaseCommand):
+    def add_arguments(self, parser):
+        parser.add_argument("--assets", nargs="*", type=str)
+
     def handle(self, *args, **options):
+        assets = options["assets"]
+
         try:
             extra_args = LgCl.preflight()
             target_url = "https://www.lg.com/cl/tvs-y-soundbars/4k-uhd-tvs/55ut8050psb/"
             session = session_with_proxy(extra_args)
             response = session.get(target_url)
-            checks = [
-                "198646195fd16dfedce75f3ff6bc8708",
-                "c5850702d4df9e650d7ab73c8f6bda82",
-                "edd239717c86",
-            ]
-            for check in checks:
-                if check not in response.text:
-                    raise Exception(f"{check} not found in {target_url}")
+            for asset in assets:
+                if asset not in response.text:
+                    raise Exception(f"{asset} not found in {target_url}")
 
             print("Checks OK")
         except Exception as e:
