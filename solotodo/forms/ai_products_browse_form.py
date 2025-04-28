@@ -40,9 +40,6 @@ class AIProductsBrowseForm(forms.Form):
     search = forms.CharField(required=False)
     bucket_field = forms.CharField(required=False)
 
-    page = forms.IntegerField(min_value=1, required=False)
-    page_size = forms.IntegerField(min_value=1, max_value=200, required=False)
-
     COLLAPSE_SIZE = 5
 
     def __init__(self, user, *args, **kwargs):
@@ -190,6 +187,10 @@ class AIProductsBrowseForm(forms.Form):
 
         # RAG
         product_ids = self.ai_search(self.cleaned_data["search"])
+
+        if not isinstance(product_ids, list):
+            product_ids = []
+
         search = search.filter("terms", product_id=product_ids)
 
         if self.cleaned_data["db_brands"]:
@@ -257,11 +258,8 @@ class AIProductsBrowseForm(forms.Form):
             }
         )
 
-        # Pagination and execution
-        page = self.cleaned_data["page"]
-        page_size = self.cleaned_data["page_size"]
-        offset = (page - 1) * page_size
-        search_result = search[offset : offset + page_size].execute().to_dict()
+        # Execution
+        search_result = search[:100].execute().to_dict()
 
         # Obtain the full pricing information of the search results
         search_result_product_ids = []
@@ -279,7 +277,7 @@ class AIProductsBrowseForm(forms.Form):
             "per_product",
             "terms",
             field="product_id",
-            size=self.COLLAPSE_SIZE * page_size,
+            size=self.COLLAPSE_SIZE * 100,
         ).metric(
             "normal_price_usd", "min", field="normal_price_usd_with_coupon"
         ).metric(
