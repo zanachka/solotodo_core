@@ -64,6 +64,7 @@ from solotodo.forms.entity_dissociation_form import EntityDisssociationForm
 from solotodo.forms.entity_estimated_sales_form import EntityEstimatedSalesForm
 from solotodo.forms.product_analytics_form import ProductAnalyticsForm
 from solotodo.forms.products_browse_form import ProductsBrowseForm
+from solotodo.forms.ai_products_browse_form import AIProductsBrowseForm
 from solotodo.forms.lead_grouping_form import LeadGroupingForm
 from solotodo.forms.ip_form import IpForm
 from solotodo.forms.category_form import CategoryForm
@@ -1436,7 +1437,7 @@ class ProductViewSet(LoggingMixin, viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False)
     def browse(self, request, *args, **kwargs):
-        form = ProductsBrowseForm(request.user, request.query_params)
+        form = AIProductsBrowseForm(request.user, request.query_params)
 
         if not form.is_valid():
             return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)

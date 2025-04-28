@@ -137,7 +137,7 @@ class Product(models.Model):
 
     @property
     def ai_specs(self):
-        specs = {}
+        specs = {"product_id": self.pk, "category": self.category.name}
 
         for field in self.instance_model.fields.all():
             field_type = field.field.model.name
@@ -146,16 +146,17 @@ class Product(models.Model):
 
             if field_type == "FileField":
                 continue
-            elif field_type == "CharField":
-                specs[field_name] = field_value.unicode_value
-            elif field_type == "IntegerField":
-                specs[field_name] = int(field_value.decimal_value)
+
+            if field_type == "DecimalField":
+                specs[field_name] = float(field_value.decimal_value)
             elif field_type == "BooleanField":
                 specs[field_name] = "Yes" if field_value.unicode_value else "No"
-            elif field_type == "DecimalField":
-                specs[field_name] = field_value.decimal_value
             else:
-                specs[field_name] = field_value.unicode_representation
+                specs[field_name] = (
+                    field_value.unicode_representation
+                    or field_value.unicode_value
+                    or int(field_value.decimal_value)
+                )
 
         return specs
 
@@ -603,11 +604,13 @@ class Product(models.Model):
     def ai_generate_description(self):
         tagging_prompt = ChatPromptTemplate.from_template(
             """
-            Usando la información proporcionada redacta una descripción neutral y objetiva del producto optimizada para SEO, en formato markdown y que siga este orden:
+            Usando la información proporcionada redacta una descripción del producto optimizada para SEO, en formato markdown y que siga este orden:
 
-            - Un párrafo introductorio que describa el producto de forma atractiva.
-            - Un párrafo con las características más destacadas.
-            - Un listado con las 5 especificaciones técnicas más destacables.
+            - Un párrafo introductorio que describa el producto, recuerda que el objetivo es informar, no vender.
+            - Un párrafo que hable sobre las caracteristicas destacadas del producto y sus límites de uso.
+
+            Límitate a devolver solo lo solicitado, sin comentarios.
+            No uses encabezados ni listas, puedes usar negrita para las frases que consideres importantes.
 
             Información: {input}
             """
@@ -630,7 +633,13 @@ class Product(models.Model):
         return seo_description.content
 
     def update_ai_description(self):
-        page_content = self.ai_generate_description()
+        page_content = json.dumps(
+            {
+                "specs": self.ai_specs,
+                "description": self.ai_generate_description(),
+            }
+        )
+
         vector = settings.VECTOR_STORE.embedding.embed_documents([page_content])[0]
 
         es_product = EsProduct.get_by_product_id(self.pk)
