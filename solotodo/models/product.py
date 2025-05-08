@@ -115,6 +115,12 @@ class Product(models.Model):
     category_id = property(lambda self: self.instance_model.model.category.id)
     name = property(lambda self: str(self.instance_model))
 
+    @property
+    def ai_description(self):
+        return json.loads(EsProduct.get_by_product_id(self.pk).summary_text)[
+            "description"
+        ]
+
     def __init__(self, *args, **kwargs):
         self._es_entry = None
         super(Product, self).__init__(*args, **kwargs)
@@ -604,15 +610,19 @@ class Product(models.Model):
     def ai_generate_description(self):
         tagging_prompt = ChatPromptTemplate.from_template(
             """
-            Usando la información proporcionada redacta una descripción del producto optimizada para SEO, en formato markdown y que siga este orden:
-
-            - Un párrafo introductorio que describa el producto, recuerda que el objetivo es informar, no vender.
-            - Un párrafo que hable sobre las caracteristicas destacadas del producto y sus límites de uso.
-
-            Límitate a devolver solo lo solicitado, sin comentarios.
-            No uses encabezados ni listas, puedes usar negrita para las frases que consideres importantes.
-
-            Información: {input}
+            Redacta una descripción neutral y objetiva del producto usando la información proporcionada.
+            
+            Considera todos estos puntos:
+            
+            - El texto debe estar en formato markdown.
+            - No uses encabezados, titulos, ni agregues comentarios, tu respuesta será publicada tal cual la retornes.
+            - El objetivo es informar, no convencer ni incluir opiniones.
+            - Debe tener un primer párrafo que describa el producto de manera clara y neutral.
+            - Debe tener un segundo párrafo que explique los casos de uso del producto, sus ventajas y limitaciones de manera neutral.
+            - Utiliza negritas para destacar frases clave.
+            - Limítate a retornar solo los 2 párrafos solicitados.
+            
+            Información del producto: {input}
             """
         )
         related_entities = self.entity_set

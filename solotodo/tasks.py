@@ -181,3 +181,15 @@ def ai_associate_entity(entity_id):
 def ai_entity_update_category(entity_id):
     entity = Entity.objects.get(pk=entity_id)
     entity.ai_update_category()
+
+
+@shared_task(
+    queue="ai",
+    ignore_result=True,
+    autoretry_for=(Exception,),
+    max_retries=2,
+    default_retry_delay=10,
+)
+def ai_generate_product_descriptions(product_id):
+    product = Product.objects.get(pk=product_id)
+    product.update_ai_description()

@@ -1,3 +1,5 @@
+import json
+
 from collections import OrderedDict
 
 from django import forms
@@ -5,12 +7,15 @@ from django.conf import settings
 from django.core.files.storage import default_storage
 from django.utils.text import slugify
 
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains.retrieval import create_retrieval_chain
+from langchain_core.prompts import ChatPromptTemplate
 from rest_framework.reverse import reverse
 from elasticsearch_dsl import A, Q
 
 from solotodo.filters import CategoryFullBrowseEntityFilterSet
 from solotodo.forms.product_specs_form import ProductSpecsForm
-from solotodo.models import Product, Store, Category, Brand, EsProduct
+from solotodo.models import Product, Store, Brand, EsProduct
 from solotodo.serializers import CategoryFullBrowseResultSerializer
 
 
@@ -40,7 +45,7 @@ class AIProductsBrowseForm(forms.Form):
     search = forms.CharField(required=False)
     bucket_field = forms.CharField(required=False)
 
-    COLLAPSE_SIZE = 5
+    COLLAPSE_SIZE = 50
 
     def __init__(self, user, *args, **kwargs):
         self.user = user
@@ -75,12 +80,6 @@ class AIProductsBrowseForm(forms.Form):
         original_bucket_field = self.cleaned_data["bucket_field"]
         return original_bucket_field or "specs.default_bucket"
 
-    def clean_page(self):
-        return self.cleaned_data["page"] or 1
-
-    def clean_page_size(self):
-        return self.cleaned_data["page_size"] or 10
-
     def get_price_filter(self):
         # Returns the ES DSL Query object that represents the entity-level
         # filter of the form price parameters
@@ -110,12 +109,7 @@ class AIProductsBrowseForm(forms.Form):
 
         return price_filter
 
-    def ai_search(self, query):
-        import json
-        from langchain.chains.combine_documents import create_stuff_documents_chain
-        from langchain.chains.retrieval import create_retrieval_chain
-        from langchain_core.prompts import ChatPromptTemplate
-
+    def ai_search(self, query, filters):
         retrieval_qa_chat_prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -130,26 +124,24 @@ class AIProductsBrowseForm(forms.Form):
         )
 
         prompt = f"""
-        Based on the given query, return a list with the product_id values of the probably matching products.
-        Is critical to coincide with the product category that is being queried.
-        Limit yourself to returning only the list, do not add any comments.
-        If no products match, return an empty list [].
+        Basado en la búsqueda recibida, retorna una lista JSON con los product_id de los productos que puedan ser de interés.
+        Limítate a devolver solo la lista, no añadas comentarios.
         """
+
+        retriever = settings.VECTOR_STORE_2.as_retriever(
+            search_type="similarity",
+            search_kwargs={"k": 100, "fetch_k": 10000, "filter": filters},
+        )
         retrieval_chain = create_retrieval_chain(
-            settings.VECTOR_STORE_2.as_retriever(
-                search_type="similarity",
-                search_kwargs={
-                    "k": 50,
-                    "filter": [
-                        {"term": {"product_relationships": "product"}},
-                    ],
-                },
-            ),
+            retriever,
             combine_docs_chain,
         )
         response = retrieval_chain.invoke({"input": f"{prompt} \n {query}"})
+        answer = json.loads(response["answer"])
+        print(retriever.__dict__)
+        print(len(answer))
 
-        return json.loads(response["answer"])
+        return answer
 
     def get_category_products(self, request, category=None):
         from solotodo.models import EsProduct, EsEntity
@@ -185,14 +177,6 @@ class AIProductsBrowseForm(forms.Form):
         if category:
             search = search.filter("term", category_id=category.id)
 
-        # RAG
-        product_ids = self.ai_search(self.cleaned_data["search"])
-
-        if not isinstance(product_ids, list):
-            product_ids = []
-
-        search = search.filter("terms", product_id=product_ids)
-
         if self.cleaned_data["db_brands"]:
             search = search.filter(
                 "terms", brand_id=[x.id for x in self.cleaned_data["db_brands"]]
@@ -215,7 +199,6 @@ class AIProductsBrowseForm(forms.Form):
 
         # ordering by relevance
         search = search.filter("has_child", type="entity", query=entities_filter)
-        keyword_search_type = "query"
         sort_params = {"_score": "desc"}
         search = search.sort(sort_params)
         search = search.post_filter(all_specs_filter)
@@ -258,7 +241,15 @@ class AIProductsBrowseForm(forms.Form):
             }
         )
 
-        # Execution
+        # RAG
+        product_ids = self.ai_search(
+            self.cleaned_data["search"], search.to_dict().get("query")
+        )
+
+        if not isinstance(product_ids, list):
+            product_ids = []
+
+        search = search.filter("terms", product_id=product_ids)
         search_result = search[:100].execute().to_dict()
 
         # Obtain the full pricing information of the search results

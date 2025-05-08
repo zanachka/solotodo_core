@@ -271,6 +271,7 @@ class ProductSerializer(serializers.HyperlinkedModelSerializer):
             "sec_qr_codes",
             "specs",
             "keywords",
+            "ai_description",
         )
 
 

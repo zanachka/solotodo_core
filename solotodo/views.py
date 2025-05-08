@@ -1437,6 +1437,16 @@ class ProductViewSet(LoggingMixin, viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False)
     def browse(self, request, *args, **kwargs):
+        form = ProductsBrowseForm(request.user, request.query_params)
+
+        if not form.is_valid():
+            return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        result = form.get_category_products(request)
+        return Response(result)
+
+    @action(detail=False)
+    def ai_browse(self, request, *args, **kwargs):
         form = AIProductsBrowseForm(request.user, request.query_params)
 
         if not form.is_valid():
