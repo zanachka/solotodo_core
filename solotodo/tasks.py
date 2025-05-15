@@ -1,7 +1,13 @@
+import random
+
 from celery import shared_task
 from django.core.mail import EmailMessage
 from django.http import QueryDict
 
+from solotodo.memcached_limiter import (
+    ConcurrencyLimitReached,
+    memcached_site_limit,
+)
 from solotodo.models import Store, Category, StoreUpdateLog, Product, Entity
 
 
@@ -181,3 +187,85 @@ def ai_associate_entity(entity_id):
 def ai_entity_update_category(entity_id):
     entity = Entity.objects.get(pk=entity_id)
     entity.ai_update_category()
+
+
+@shared_task(
+    bind=True,
+    queue="storescraper",
+    ignore_result=True,
+    autoretry_for=(Exception,),
+    max_retries=10,
+    default_retry_delay=10,
+)
+def store_new_category_update_pricing(
+    self,
+    store_id,
+    category_id,
+    discover_urls_concurrency,
+    products_for_url_concurrency,
+    use_async,
+    update_log_id,
+    extra_args,
+):
+    print(f"Category {category_id} Update Pricing RETRY: {self.request.retries}")
+    try:
+        with memcached_site_limit(
+            f"{store_id}_discover_entries", limit=discover_urls_concurrency, expire=3600
+        ):
+            store = Store.objects.get(pk=store_id)
+            category = Category.objects.get(pk=category_id)
+            update_log = StoreUpdateLog.objects.get(pk=update_log_id)
+            store.new_update_pricing_category(
+                category,
+                discover_urls_concurrency,
+                products_for_url_concurrency,
+                use_async,
+                update_log,
+                extra_args,
+            )
+    except ConcurrencyLimitReached:
+        delay = 3
+        print(f"Delaying for: {delay}")
+        raise self.retry(
+            exc=ConcurrencyLimitReached(), countdown=delay, max_retries=100
+        )
+
+
+@shared_task(
+    bind=True,
+    queue="storescraper",
+    ignore_result=True,
+    autoretry_for=(Exception,),
+    max_retries=2,
+    default_retry_delay=10,
+)
+def store_new_create_or_update_entity_from_discovery_url(
+    self,
+    store_id,
+    update_log_id,
+    discovery_url,
+    category_id,
+    extra_args,
+    products_for_url_concurrency,
+):
+    print(f"Create or update entity RETRY: {self.request.retries}")
+    try:
+        with memcached_site_limit(
+            f"{store_id}_products_for_url",
+            limit=products_for_url_concurrency,
+            expire=3600,
+        ):
+            store = Store.objects.get(pk=store_id)
+            category = Category.objects.get(pk=category_id)
+            update_log = StoreUpdateLog.objects.get(pk=update_log_id)
+            store.new_create_or_update_entity_from_discovery_url(
+                update_log, discovery_url, category, extra_args
+            )
+    except ConcurrencyLimitReached:
+        delay = 3
+        print("Delaying for: ", delay)
+        raise self.retry(
+            exc=ConcurrencyLimitReached(), countdown=delay, max_retries=100
+        )
+    except Exception as e:
+        print(e)

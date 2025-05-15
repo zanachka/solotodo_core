@@ -239,6 +239,7 @@ class Entity(models.Model):
     scraped_category = models.ForeignKey(
         Category, on_delete=models.CASCADE, related_name="+"
     )
+    scraped_categories = models.ManyToManyField(Category, blank=True, related_name="+")
     currency = models.ForeignKey(Currency, on_delete=models.CASCADE)
     condition = models.URLField(choices=CONDITION_CHOICES, db_index=True)
     scraped_condition = models.URLField(choices=CONDITION_CHOICES, db_index=True)
@@ -370,7 +371,7 @@ class Entity(models.Model):
             )
 
             for section_name, position_value in scraped_product.positions:
-                store_section = sections_dict.get(section_name)
+                store_section = sections_dict.get(section_name, None)
 
                 if not store_section:
                     store_section = StoreSection.objects.get_or_create(
@@ -418,9 +419,12 @@ class Entity(models.Model):
 
     @classmethod
     def create_from_scraped_product(
-        cls, scraped_product, store, category, currency, sections_dict
+        cls, scraped_product, store, category, currency=None, sections_dict=dict
     ):
         from solotodo.models import EntityHistory, StoreSection, EntitySectionPosition
+
+        if not currency:
+            currency = Currency.objects.get(iso_code=scraped_product.currency)
 
         new_entity = cls.objects.create(
             store=store,
@@ -466,7 +470,7 @@ class Entity(models.Model):
         new_entity.save()
 
         for section_name, position_value in scraped_product.positions:
-            store_section = sections_dict.get(section_name)
+            store_section = sections_dict.get(section_name, None)
 
             if not store_section:
                 store_section = StoreSection.objects.get_or_create(
