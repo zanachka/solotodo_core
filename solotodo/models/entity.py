@@ -370,20 +370,6 @@ class Entity(models.Model):
                 review_avg_score=scraped_product.review_avg_score,
             )
 
-            for section_name, position_value in scraped_product.positions:
-                store_section = sections_dict.get(section_name, None)
-
-                if not store_section:
-                    store_section = StoreSection.objects.get_or_create(
-                        store=self.store, name=section_name
-                    )[0]
-
-                EntitySectionPosition.objects.create(
-                    section=store_section,
-                    entity_history=new_active_registry,
-                    value=position_value,
-                )
-
             updated_data.update(
                 {
                     "name": scraped_product.name,
@@ -421,7 +407,7 @@ class Entity(models.Model):
     def create_from_scraped_product(
         cls, scraped_product, store, category, currency=None, sections_dict=dict
     ):
-        from solotodo.models import EntityHistory, StoreSection, EntitySectionPosition
+        from solotodo.models import EntityHistory
 
         if not currency:
             currency = Currency.objects.get(iso_code=scraped_product.currency)
@@ -468,20 +454,6 @@ class Entity(models.Model):
 
         new_entity.active_registry = new_entity_history
         new_entity.save()
-
-        for section_name, position_value in scraped_product.positions:
-            store_section = sections_dict.get(section_name, None)
-
-            if not store_section:
-                store_section = StoreSection.objects.get_or_create(
-                    store=store, name=section_name
-                )[0]
-
-            EntitySectionPosition.objects.create(
-                section=store_section,
-                entity_history=new_entity_history,
-                value=position_value,
-            )
 
     def update_keeping_log(self, updated_data, user=None):
         from solotodo.models import EntityLog

@@ -197,7 +197,7 @@ def ai_entity_update_category(entity_id):
     max_retries=10,
     default_retry_delay=10,
 )
-def store_new_category_update_pricing(
+def store_category_update_pricing(
     self,
     store_id,
     category_id,
@@ -210,12 +210,14 @@ def store_new_category_update_pricing(
     print(f"Category {category_id} Update Pricing RETRY: {self.request.retries}")
     try:
         with memcached_site_limit(
-            f"{store_id}_discover_entries", limit=discover_urls_concurrency, expire=3600
+            f"{update_log_id}_discover_entries",
+            limit=discover_urls_concurrency,
+            expire=3600,
         ):
             store = Store.objects.get(pk=store_id)
             category = Category.objects.get(pk=category_id)
             update_log = StoreUpdateLog.objects.get(pk=update_log_id)
-            store.new_update_pricing_category(
+            store.update_pricing_category(
                 category,
                 discover_urls_concurrency,
                 products_for_url_concurrency,
@@ -239,7 +241,7 @@ def store_new_category_update_pricing(
     max_retries=2,
     default_retry_delay=10,
 )
-def store_new_create_or_update_entity_from_discovery_url(
+def store_create_or_update_entity_from_discovery_url(
     self,
     store_id,
     update_log_id,
@@ -251,14 +253,14 @@ def store_new_create_or_update_entity_from_discovery_url(
     print(f"Create or update entity RETRY: {self.request.retries}")
     try:
         with memcached_site_limit(
-            f"{store_id}_products_for_url",
+            f"{update_log_id}_products_for_url",
             limit=products_for_url_concurrency,
             expire=3600,
         ):
             store = Store.objects.get(pk=store_id)
             category = Category.objects.get(pk=category_id)
             update_log = StoreUpdateLog.objects.get(pk=update_log_id)
-            store.new_create_or_update_entity_from_discovery_url(
+            store.create_or_update_entity_from_discovery_url(
                 update_log, discovery_url, category, extra_args
             )
     except ConcurrencyLimitReached:

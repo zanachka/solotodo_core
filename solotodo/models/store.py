@@ -2,14 +2,12 @@ import json
 import io
 import base64
 import logging
-import traceback
 
 import xlsxwriter
 from django.contrib.auth.models import Group
 from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.db import models
-from django.db.models import Q
 from django.utils import timezone
 from guardian.shortcuts import get_objects_for_user, get_objects_for_group
 from sorl.thumbnail import ImageField
@@ -17,8 +15,8 @@ from sorl.thumbnail import ImageField
 from .store_type import StoreType
 from .country import Country
 from .category import Category
-from solotodo.utils import iterable_to_dict, validate_sii_rut
-from solotodo_core.s3utils import PrivateS3Boto3Storage, MediaRootS3Boto3Storage
+from solotodo.utils import validate_sii_rut
+from solotodo_core.s3utils import MediaRootS3Boto3Storage
 from storescraper.utils import get_store_class_by_name
 
 
@@ -99,163 +97,6 @@ class Store(models.Model):
 
     def __str__(self):
         return self.name
-
-    def update_pricing(
-        self,
-        categories=None,
-        discover_urls_concurrency=None,
-        products_for_url_concurrency=None,
-        use_async=None,
-        update_log=None,
-        extra_args=None,
-    ):
-        assert self.last_activation is not None
-
-        scraper = self.scraper
-
-        categories = self.sanitize_categories_for_update(categories)
-
-        if not categories:
-            return
-
-        if update_log:
-            update_log.status = update_log.IN_PROCESS
-            update_log.save()
-
-        local_extra_args = {}
-
-        if self.storescraper_extra_args:
-            local_extra_args = json.loads(self.storescraper_extra_args)
-        if extra_args:
-            local_extra_args.update(extra_args)
-
-        def log_update_error(local_error_message):
-            if update_log:
-                update_log.status = update_log.ERROR
-                desired_filename = "logs/scrapings/{}_{}.json".format(
-                    self,
-                    timezone.localtime(update_log.creation_date).strftime(
-                        "%Y-%m-%d_%X"
-                    ),
-                )
-                storage = PrivateS3Boto3Storage()
-                real_filename = storage.save(
-                    desired_filename, ContentFile(local_error_message.encode("utf-8"))
-                )
-                update_log.registry_file = real_filename
-                update_log.save()
-
-        print("Scraping products")
-
-        try:
-            scraped_products_data = scraper.products(
-                categories=[c.storescraper_name for c in categories],
-                extra_args=local_extra_args,
-                discover_urls_concurrency=discover_urls_concurrency,
-                products_for_url_concurrency=products_for_url_concurrency,
-                use_async=use_async,
-            )
-        except Exception as e:
-            error_message = "Unknown error: {}".format(traceback.format_exc())
-            log_update_error(error_message)
-            raise
-
-        print("Products scraped")
-
-        self.update_with_scraped_products(
-            categories,
-            scraped_products_data["products"],
-            scraped_products_data["discovery_urls_without_products"],
-            update_log=update_log,
-        )
-
-    def update_with_scraped_products(
-        self,
-        categories,
-        scraped_products,
-        discovery_urls_without_products,
-        update_log=None,
-    ):
-        from solotodo.models import Currency, Entity
-
-        assert self.last_activation is not None
-
-        print("1")
-        scraped_products_dict = iterable_to_dict(scraped_products, "key")
-        print("2")
-        entities_to_be_updated = self.entity_set.filter(
-            Q(scraped_category__in=categories) | Q(key__in=scraped_products_dict.keys())
-        ).select_related()
-        print("3")
-
-        categories_dict = iterable_to_dict(Category, "storescraper_name")
-        currencies_dict = iterable_to_dict(Currency, "iso_code")
-        sections_dict = iterable_to_dict(self.sections.all(), "name")
-
-        print("4")
-
-        for entity in entities_to_be_updated:
-            print(entity.id)
-            scraped_product_for_update = scraped_products_dict.pop(entity.key, None)
-
-            if not entity.active_registry_id and not scraped_product_for_update:
-                print("skipping")
-                continue
-
-            if scraped_product_for_update:
-                category = categories_dict[scraped_product_for_update.category]
-                currency = currencies_dict[scraped_product_for_update.currency]
-            else:
-                category = None
-                currency = None
-
-            entity.update_with_scraped_product(
-                scraped_product_for_update, sections_dict, category, currency
-            )
-
-        for scraped_product in scraped_products_dict.values():
-            print(scraped_product.key)
-            Entity.create_from_scraped_product(
-                scraped_product,
-                self,
-                categories_dict[scraped_product.category],
-                currencies_dict[scraped_product.currency],
-                sections_dict,
-            )
-
-        print("Done")
-
-        if update_log:
-            update_log.status = update_log.SUCCESS
-            update_log.available_products_count = len(
-                list(filter(lambda x: x.is_available(), scraped_products))
-            )
-            update_log.unavailable_products_count = len(
-                list(filter(lambda x: not x.is_available(), scraped_products))
-            )
-            update_log.discovery_urls_without_products_count = len(
-                discovery_urls_without_products
-            )
-
-            serialized_scraping_info = {
-                "categories": [c.storescraper_name for c in categories],
-                "discovery_urls_without_products": discovery_urls_without_products,
-                "products": [p.serialize() for p in scraped_products],
-            }
-
-            storage = PrivateS3Boto3Storage()
-            scraping_record_file = ContentFile(
-                json.dumps(serialized_scraping_info, indent=4).encode("utf-8")
-            )
-
-            desired_filename = "logs/scrapings/{}_{}.json".format(
-                self,
-                timezone.localtime(update_log.creation_date).strftime("%Y-%m-%d_%X"),
-            )
-            real_filename = storage.save(desired_filename, scraping_record_file)
-            update_log.registry_file = real_filename
-
-            update_log.save()
 
     def scraper_categories(self):
         return Category.objects.filter(storescraper_name__in=self.scraper.categories())
@@ -503,7 +344,7 @@ class Store(models.Model):
         else:
             return {}
 
-    def new_update_pricing(
+    def update_pricing(
         self,
         categories=None,
         discover_urls_concurrency=None,
@@ -513,11 +354,9 @@ class Store(models.Model):
         extra_args=None,
     ):
         from solotodo.models import StoreUpdateLog
-        from solotodo.tasks import store_new_category_update_pricing
+        from solotodo.tasks import store_category_update_pricing
 
         assert self.last_activation is not None
-
-        categories = self.sanitize_categories_for_update(categories)
 
         if not discover_urls_concurrency:
             discover_urls_concurrency = self.scraper.preferred_discover_urls_concurrency
@@ -534,6 +373,13 @@ class Store(models.Model):
             update_log = StoreUpdateLog.objects.create(
                 store=self, status=StoreUpdateLog.IN_PROCESS
             )
+
+        categories = self.sanitize_categories_for_update(categories)
+
+        if not categories:
+            update_log.status = update_log.ERROR
+            update_log.save()
+            return
 
         update_log.discovery_url_concurrency = discover_urls_concurrency
         update_log.products_for_url_concurrency = products_for_url_concurrency
@@ -554,19 +400,26 @@ class Store(models.Model):
         }
         logger.info("Started pricing update", extra=logging_payload)
 
-        for category in categories:
-            if use_async:
-                store_new_category_update_pricing.delay(
-                    self.id,
-                    category.id,
-                    discover_urls_concurrency,
-                    products_for_url_concurrency,
-                    use_async,
-                    update_log.id,
-                    extra_args,
-                )
-            else:
-                self.new_update_pricing_category(
+        if use_async:
+            update_log.initialize_task_counter(0)
+            for category in categories:
+                update_log.increment_task_counter()
+
+                if use_async:
+                    store_category_update_pricing.delay(
+                        self.id,
+                        category.id,
+                        discover_urls_concurrency,
+                        products_for_url_concurrency,
+                        use_async,
+                        update_log.id,
+                        extra_args,
+                    )
+        else:
+            update_log.initialize_task_counter(1)
+            for category in categories:
+                update_log.increment_task_counter()
+                self.update_pricing_category(
                     category,
                     discover_urls_concurrency,
                     products_for_url_concurrency,
@@ -574,8 +427,10 @@ class Store(models.Model):
                     update_log,
                     extra_args,
                 )
+            update_log.decrement_task_counter()
+        return update_log
 
-    def new_update_pricing_category(
+    def update_pricing_category(
         self,
         category,
         discover_urls_concurrency,
@@ -584,7 +439,7 @@ class Store(models.Model):
         update_log,
         extra_args,
     ):
-        from solotodo.tasks import store_new_create_or_update_entity_from_discovery_url
+        from solotodo.tasks import store_create_or_update_entity_from_discovery_url
 
         logger = logging.getLogger("solotodo.logtail")
         logging_payload = {
@@ -597,11 +452,27 @@ class Store(models.Model):
             "category_name": category.name,
         }
         logger.info("Started category pricing update", extra=logging_payload)
+        discovered_urls = []
 
         try:
-            discovered_entries = self.scraper.discover_entries_for_category(
+            for discovery_url in self.scraper.discover_urls_for_category(
                 category.storescraper_name, extra_args=extra_args
-            )
+            ):
+                update_log.increment_task_counter()
+                if use_async:
+                    store_create_or_update_entity_from_discovery_url.delay(
+                        self.id,
+                        update_log.id,
+                        discovery_url,
+                        category.id,
+                        extra_args,
+                        products_for_url_concurrency,
+                    )
+                else:
+                    self.create_or_update_entity_from_discovery_url(
+                        update_log, discovery_url, category, extra_args
+                    )
+                discovered_urls.append(discovery_url)
         except Exception as e:
             update_log.status = update_log.ERROR
             update_log.save()
@@ -614,9 +485,8 @@ class Store(models.Model):
                     "category_name": category.name,
                 },
             )
-            return
+            raise
 
-        discovered_urls = list(discovered_entries.keys())
         logger.info(
             f"Discovered URLs for category",
             extra={
@@ -645,22 +515,9 @@ class Store(models.Model):
             entity.active_registry = None
             entity.save()
 
-        for discovered_url in discovered_urls:
-            if use_async:
-                store_new_create_or_update_entity_from_discovery_url.delay(
-                    self.id,
-                    update_log.id,
-                    discovered_url,
-                    category.id,
-                    extra_args,
-                    products_for_url_concurrency,
-                )
-            else:
-                self.new_create_or_update_entity_from_discovery_url(
-                    update_log, discovered_url, category, extra_args
-                )
+        update_log.decrement_task_counter()
 
-    def new_create_or_update_entity_from_discovery_url(
+    def create_or_update_entity_from_discovery_url(
         self, update_log, discovery_url, category, extra_args=None
     ):
         from solotodo.models import Entity
@@ -684,7 +541,7 @@ class Store(models.Model):
                     "discovery_url": discovery_url,
                 },
             )
-            return
+            raise
 
         existing_entities = self.entity_set.filter(discovery_url=discovery_url)
         existing_entities_dict = {e.key: e for e in existing_entities}
@@ -712,6 +569,8 @@ class Store(models.Model):
                 print("Marking as inactive: ", entity)
                 entity.active_registry = None
                 entity.save()
+
+        update_log.decrement_task_counter()
 
     class Meta:
         app_label = "solotodo"
