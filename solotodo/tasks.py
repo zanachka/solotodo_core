@@ -210,9 +210,8 @@ def store_category_update_pricing(
     print(f"Category {category_id} Update Pricing RETRY: {self.request.retries}")
     try:
         with memcached_site_limit(
-            f"{update_log_id}_discover_entries",
+            f"{store_id}_discover_entries",
             limit=discover_urls_concurrency,
-            expire=3600,
         ):
             store = Store.objects.get(pk=store_id)
             category = Category.objects.get(pk=category_id)
@@ -253,9 +252,8 @@ def store_create_or_update_entity_from_discovery_url(
     print(f"Create or update entity RETRY: {self.request.retries}")
     try:
         with memcached_site_limit(
-            f"{update_log_id}_products_for_url",
+            f"{store_id}_products_for_url",
             limit=products_for_url_concurrency,
-            expire=3600,
         ):
             store = Store.objects.get(pk=store_id)
             category = Category.objects.get(pk=category_id)

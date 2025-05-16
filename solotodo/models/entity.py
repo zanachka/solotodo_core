@@ -333,9 +333,9 @@ class Entity(models.Model):
         return False
 
     def update_with_scraped_product(
-        self, scraped_product, sections_dict={}, category=None, currency=None
+        self, scraped_product, category=None, currency=None
     ):
-        from solotodo.models import EntityHistory, StoreSection, EntitySectionPosition
+        from solotodo.models import EntityHistory
 
         assert scraped_product is None or self.key == scraped_product.key
 
@@ -402,6 +402,7 @@ class Entity(models.Model):
             updated_data.update({"active_registry": None})
 
         self.update_keeping_log(updated_data)
+        self.scraped_categories.add(category)
 
     @classmethod
     def create_from_scraped_product(
@@ -438,6 +439,7 @@ class Entity(models.Model):
             is_visible=True,
             last_pricing_update=timezone.now(),
         )
+        new_entity.scraped_categories.add(category)
 
         new_entity_history = EntityHistory.objects.create(
             entity=new_entity,

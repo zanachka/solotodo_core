@@ -6,4 +6,4 @@ source ~/.zshrc
 
 cd "${0%/*}"
 source env/bin/activate
-celery multi start -A solotodo_core storescraper -Q:storescraper storescraper -c:storescraper 3 --logfile=solotodo_core/logs/celery/%n.log --pidfile=solotodo_core/pids/celery/%n.pid -E -l info
+celery multi start -A solotodo_core storescraper -Q:storescraper storescraper -c:storescraper 20 --logfile=solotodo_core/logs/celery/%n.log --pidfile=solotodo_core/pids/celery/%n.pid -E -l info

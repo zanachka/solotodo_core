@@ -1,3 +1,6 @@
+import json
+import logging
+
 from django.db import models
 from django.core.cache import cache
 
@@ -41,19 +44,58 @@ class StoreUpdateLog(models.Model):
 
     def initialize_task_counter(self, value):
         cache.set(self._caching_key(), value, timeout=60 * 60 * 24)
+        available_products_cache_key = f"{self._caching_key()}_available_products_count"
+        cache.set(available_products_cache_key, 0, timeout=60 * 60 * 24)
+        unavailable_products_cache_key = (
+            f"{self._caching_key()}_unavailable_products_count"
+        )
+        cache.set(unavailable_products_cache_key, 0, timeout=60 * 60 * 24)
+        discovery_urls_without_products_cache_key = (
+            f"{self._caching_key()}_discovery_urls_without_products_count"
+        )
+        cache.set(discovery_urls_without_products_cache_key, 0, timeout=60 * 60 * 24)
 
     def increment_task_counter(self):
         new_val = cache.incr(self._caching_key())
-        # print(f"Incrementing: {new_val}")
         return new_val
+
+    def increment_available_products_count(self):
+        available_products_cache_key = f"{self._caching_key()}_available_products_count"
+        cache.incr(available_products_cache_key)
+
+    def increment_unavailable_products_count(self):
+        unavailable_products_cache_key = (
+            f"{self._caching_key()}_unavailable_products_count"
+        )
+        cache.incr(unavailable_products_cache_key)
+
+    def increment_discovery_urls_without_products_count(self):
+        discovery_urls_without_products_cache_key = (
+            f"{self._caching_key()}_discovery_urls_without_products_count"
+        )
+        cache.incr(discovery_urls_without_products_cache_key)
 
     def decrement_task_counter(self):
         new_val = cache.decr(self._caching_key())
-        # print(f"Decrementing: {new_val}")
         if new_val == 0:
-            print("No pending tasks, setting as SUCCESS")
-            self.status = StoreUpdateLog.SUCCESS
-            self.save()
+            logger = logging.getLogger("logstash")
+            logger.info(
+                json.dumps(
+                    {"message": "Finished pricing update", "update_log_id": self.id}
+                )
+            )
+            if self.status == StoreUpdateLog.IN_PROCESS:
+                self.status = StoreUpdateLog.SUCCESS
+                self.available_products_count = cache.get(
+                    f"{self._caching_key()}_available_products_count"
+                )
+                self.unavailable_products_count = cache.get(
+                    f"{self._caching_key()}_unavailable_products_count"
+                )
+                self.discovery_urls_without_products_count = cache.get(
+                    f"{self._caching_key()}_discovery_urls_without_products_count"
+                )
+                self.save()
 
     def _caching_key(self):
         return f"UPDATE_LOG_{self.id}"
