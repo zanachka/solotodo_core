@@ -13,8 +13,8 @@ from django.db.models import Avg, Count, Min, Max
 from django.http import Http404, JsonResponse
 from django.utils import timezone
 from django_filters import rest_framework
+from elasticsearch_dsl import Search
 from geoip2.errors import AddressNotFoundError
-from googleapiclient.http import HttpRequest
 from guardian.utils import get_anonymous_user
 from rest_framework import viewsets, permissions, status, mixins
 from rest_framework.decorators import action
@@ -172,7 +172,7 @@ from solotodo.serializers import (
     EntityAiSimilarProductEntrySerializer,
     EntityAiNestedProductSerializer,
 )
-from solotodo.tasks import store_update, send_historic_entity_positions_report_task
+from solotodo.tasks import send_historic_entity_positions_report_task
 from solotodo.utils import get_client_ip, iterable_to_dict
 from solotodo_core.s3utils import MediaRootS3Boto3Storage
 
@@ -664,42 +664,19 @@ class StoreViewSet(PermissionReadOnlyModelViewSet):
         if form.is_valid():
             cleaned_data = form.cleaned_data
 
-            categories = cleaned_data["categories"]
-            if categories:
-                # The request specifies the categories to update
-                category_ids = [category.id for category in categories]
-            elif (
-                form.default_categories().count() == store.scraper_categories().count()
-            ):
-                # The request does not specify the categories, and the user
-                # has permissions over all of the categories available to the
-                # scraper. Setting category_ids to None tells the updating
-                # process to also update the store entities whose type is not
-                # in the scraper official list (e.g. "power supplies" in Paris
-                # gaming section).
-                category_ids = None
-            else:
-                # The request does not specify the categories, and the user
-                # only has permission over a subset of the available categories
-                # Use the categories with permissions.
-                category_ids = [category.id for category in form.default_categories()]
-
+            categories = cleaned_data["categories"] or form.default_categories()
             discover_urls_concurrency = cleaned_data["discover_urls_concurrency"]
             products_for_url_concurrency = cleaned_data["products_for_url_concurrency"]
             use_async = cleaned_data["prefer_async"]
 
-            store_update_log = StoreUpdateLog.objects.create(store=store)
-
-            task = store_update.delay(
-                store.id,
-                category_ids=category_ids,
+            store_update_log = store.update_pricing(
+                categories=categories,
                 discover_urls_concurrency=discover_urls_concurrency,
                 products_for_url_concurrency=products_for_url_concurrency,
                 use_async=use_async,
-                update_log_id=store_update_log.id,
             )
 
-            return Response({"task_id": task.id, "log_id": store_update_log.id})
+            return Response({"log_id": store_update_log.id})
         else:
             return Response(form.errors)
 
@@ -750,6 +727,25 @@ class StoreUpdateLogViewSet(viewsets.ReadOnlyModelViewSet):
             result[store_url] = store_latest_log
 
         return Response(result)
+
+    @action(detail=True)
+    def registry(self, request, *args, **kwargs):
+        update_log = self.get_object()
+        search = (
+            Search(using=settings.ES, index="logs-store_update")
+            .filter("term", update_log_id=update_log.id)
+            .sort({"@timestamp": {"order": "desc"}})
+        )
+        registry = []
+        for entry in search.iterate():
+            registry.append(
+                {
+                    "timestamp": entry["@timestamp"],
+                    "level": entry.level,
+                    "message": entry.message,
+                }
+            )
+        return JsonResponse(registry, safe=False)
 
 
 class EntityViewSet(viewsets.ReadOnlyModelViewSet):

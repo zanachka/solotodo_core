@@ -472,7 +472,9 @@ class Store(models.Model):
                     }
                 )
             )
-            for discovery_url in self.scraper.discover_urls_for_category(
+            for (
+                discovery_url
+            ) in self.scraper.discover_urls_for_category_with_custom_exception(
                 category.storescraper_name, extra_args=extra_args
             ):
                 cache_key = f"SCRAPING_{update_log.id}_{discovery_url}"
@@ -549,7 +551,7 @@ class Store(models.Model):
 
         try:
             products_found = False
-            for scraped_product in self.scraper.products_for_url(
+            for scraped_product in self.scraper.products_for_url_with_custom_exception(
                 discovery_url, category, extra_args=extra_args
             ):
                 logger.info(

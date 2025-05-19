@@ -406,39 +406,45 @@ class Entity(models.Model):
 
     @classmethod
     def create_from_scraped_product(
-        cls, scraped_product, store, category, currency=None, sections_dict=dict
+        cls, scraped_product, store, category, currency=None
     ):
         from solotodo.models import EntityHistory
 
         if not currency:
             currency = Currency.objects.get(iso_code=scraped_product.currency)
 
-        new_entity = cls.objects.create(
-            store=store,
-            category=category,
-            scraped_category=category,
-            currency=currency,
-            condition=scraped_product.condition,
-            scraped_condition=scraped_product.condition,
-            name=scraped_product.name,
-            cell_plan_name=scraped_product.cell_plan_name,
-            part_number=scraped_product.part_number,
-            sku=scraped_product.sku,
-            ean=scraped_product.ean,
-            key=scraped_product.key,
-            url=scraped_product.url,
-            discovery_url=scraped_product.discovery_url,
-            picture_urls=scraped_product.picture_urls_as_json(),
-            video_urls=scraped_product.video_urls_as_json(),
-            description=scraped_product.description,
-            flixmedia_id=scraped_product.flixmedia_id,
-            seller=scraped_product.seller,
-            review_count=scraped_product.review_count,
-            review_avg_score=scraped_product.review_avg_score,
-            has_virtual_assistant=scraped_product.has_virtual_assistant,
-            is_visible=True,
-            last_pricing_update=timezone.now(),
-        )
+        try:
+            new_entity = cls.objects.create(
+                store=store,
+                category=category,
+                scraped_category=category,
+                currency=currency,
+                condition=scraped_product.condition,
+                scraped_condition=scraped_product.condition,
+                name=scraped_product.name,
+                cell_plan_name=scraped_product.cell_plan_name,
+                part_number=scraped_product.part_number,
+                sku=scraped_product.sku,
+                ean=scraped_product.ean,
+                key=scraped_product.key,
+                url=scraped_product.url,
+                discovery_url=scraped_product.discovery_url,
+                picture_urls=scraped_product.picture_urls_as_json(),
+                video_urls=scraped_product.video_urls_as_json(),
+                description=scraped_product.description,
+                flixmedia_id=scraped_product.flixmedia_id,
+                seller=scraped_product.seller,
+                review_count=scraped_product.review_count,
+                review_avg_score=scraped_product.review_avg_score,
+                has_virtual_assistant=scraped_product.has_virtual_assistant,
+                is_visible=True,
+                last_pricing_update=timezone.now(),
+            )
+        except IntegrityError:
+            # There is the possibility of a race condition in our celery workers, where two of them may try to create
+            # the same entity at almost the same time
+            return
+
         new_entity.scraped_categories.add(category)
 
         new_entity_history = EntityHistory.objects.create(

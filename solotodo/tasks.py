@@ -1,5 +1,3 @@
-import random
-
 from celery import shared_task
 from django.core.mail import EmailMessage
 from django.http import QueryDict
@@ -9,68 +7,7 @@ from solotodo.memcached_limiter import (
     memcached_site_limit,
 )
 from solotodo.models import Store, Category, StoreUpdateLog, Product, Entity
-
-
-@shared_task(
-    queue="store_update",
-    ignore_result=True,
-    autoretry_for=(Exception,),
-    max_retries=2,
-    default_retry_delay=10,
-)
-def store_update(
-    store_id,
-    category_ids=None,
-    discover_urls_concurrency=None,
-    products_for_url_concurrency=None,
-    use_async=None,
-    update_log_id=None,
-    extra_args=None,
-):
-    store = Store.objects.get(pk=store_id)
-
-    if category_ids:
-        categories = Category.objects.filter(pk__in=category_ids)
-    else:
-        categories = None
-
-    categories = store.sanitize_categories_for_update(categories)
-
-    sanitized_parameters = store.scraper.sanitize_parameters(
-        discover_urls_concurrency=discover_urls_concurrency,
-        products_for_url_concurrency=products_for_url_concurrency,
-        use_async=use_async,
-    )
-
-    discover_urls_concurrency = sanitized_parameters["discover_urls_concurrency"]
-    products_for_url_concurrency = sanitized_parameters["products_for_url_concurrency"]
-    use_async = sanitized_parameters["use_async"]
-
-    if update_log_id:
-        update_log = StoreUpdateLog.objects.get(pk=update_log_id)
-    else:
-        update_log = StoreUpdateLog.objects.create(store=store)
-
-    update_log.discovery_url_concurrency = discover_urls_concurrency
-    update_log.products_for_url_concurrency = products_for_url_concurrency
-    update_log.use_async = use_async
-    update_log.save()
-
-    update_log.categories.set(categories)
-
-    # Reset the categories to synchronize the task signature with the
-    # actual method implementation
-    if category_ids is None:
-        categories = None
-
-    store.update_pricing(
-        categories=categories,
-        discover_urls_concurrency=discover_urls_concurrency,
-        products_for_url_concurrency=products_for_url_concurrency,
-        use_async=use_async,
-        update_log=update_log,
-        extra_args=extra_args,
-    )
+from storescraper.store import StoreScrapError
 
 
 @shared_task(queue="general", ignore_result=True)
@@ -193,9 +130,6 @@ def ai_entity_update_category(entity_id):
     bind=True,
     queue="storescraper",
     ignore_result=True,
-    autoretry_for=(Exception,),
-    max_retries=10,
-    default_retry_delay=10,
 )
 def store_category_update_pricing(
     self,
@@ -207,14 +141,14 @@ def store_category_update_pricing(
     update_log_id,
     extra_args,
 ):
-    print(f"Category {category_id} Update Pricing RETRY: {self.request.retries}")
+    category = Category.objects.get(pk=category_id)
+    print(f"Category {category} Update Pricing retry # {self.request.retries}")
     try:
         with memcached_site_limit(
             f"{store_id}_discover_entries",
             limit=discover_urls_concurrency,
         ):
             store = Store.objects.get(pk=store_id)
-            category = Category.objects.get(pk=category_id)
             update_log = StoreUpdateLog.objects.get(pk=update_log_id)
             store.update_pricing_category(
                 category,
@@ -224,21 +158,28 @@ def store_category_update_pricing(
                 update_log,
                 extra_args,
             )
-    except ConcurrencyLimitReached:
-        delay = 3
-        print(f"Delaying for: {delay}")
-        raise self.retry(
-            exc=ConcurrencyLimitReached(), countdown=delay, max_retries=100
-        )
+    except ConcurrencyLimitReached as e:
+        concurrency_retry_count = getattr(self.request, "concurrency_retry_count", 0)
+        if concurrency_retry_count > 100:
+            raise
+        else:
+            self.request.concurrency_retry_count = concurrency_retry_count + 1
+            delay = 3
+            print(f"Delaying for: {delay}")
+            raise self.retry(exc=e, countdown=delay)
+    except StoreScrapError as e:
+        store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
+        if store_scrap_error_count > 3:
+            raise
+        else:
+            self.request.store_scrap_error_count = store_scrap_error_count + 1
+            raise self.retry(exc=e, countdown=3, max_retries=3)
 
 
 @shared_task(
     bind=True,
     queue="storescraper",
     ignore_result=True,
-    autoretry_for=(Exception,),
-    max_retries=2,
-    default_retry_delay=10,
 )
 def store_create_or_update_entity_from_discovery_url(
     self,
@@ -249,7 +190,7 @@ def store_create_or_update_entity_from_discovery_url(
     extra_args,
     products_for_url_concurrency,
 ):
-    print(f"Create or update entity RETRY: {self.request.retries}")
+    print(f"Create or update entity retry # {self.request.retries}")
     try:
         with memcached_site_limit(
             f"{store_id}_products_for_url",
@@ -261,11 +202,19 @@ def store_create_or_update_entity_from_discovery_url(
             store.create_or_update_entity_from_discovery_url(
                 update_log, discovery_url, category, extra_args
             )
-    except ConcurrencyLimitReached:
-        delay = 3
-        print("Delaying for: ", delay)
-        raise self.retry(
-            exc=ConcurrencyLimitReached(), countdown=delay, max_retries=100
-        )
-    except Exception as e:
-        print(e)
+    except ConcurrencyLimitReached as e:
+        concurrency_retry_count = getattr(self.request, "concurrency_retry_count", 0)
+        if concurrency_retry_count > 100:
+            raise
+        else:
+            self.request.concurrency_retry_count = concurrency_retry_count + 1
+            delay = 3
+            print(f"Delaying for: {delay}")
+            raise self.retry(exc=e, countdown=delay)
+    except StoreScrapError as e:
+        store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
+        if store_scrap_error_count > 3:
+            raise
+        else:
+            self.request.store_scrap_error_count = store_scrap_error_count + 1
+            raise self.retry(exc=e, countdown=3, max_retries=3)
