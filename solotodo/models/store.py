@@ -67,7 +67,7 @@ class StoreQuerySet(models.QuerySet):
             try:
                 _ = store.scraper.sections()
                 stores_with_section_positions_support.append(store)
-            except NotImplementedError:
+            except (NotImplementedError, AttributeError):
                 # The scraper of the store does not implement sections method
                 pass
 
