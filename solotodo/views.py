@@ -53,6 +53,7 @@ from solotodo.filters import (
     ProductPictureFilterSet,
     EntitySectionPositionFilterSet,
     StoreSectionFilterSet,
+    StoreSectionPositionsUpdateLogFilterSet,
 )
 from solotodo.forms.date_range_form import DateRangeForm
 from solotodo.forms.entity_association_form import EntityAssociationForm
@@ -110,6 +111,7 @@ from solotodo.models import (
     EsProduct,
     ProductVideo,
     Bundle,
+    StoreSectionPositionsUpdateLog,
 )
 from solotodo.pagination import (
     StoreUpdateLogPagination,
@@ -123,6 +125,7 @@ from solotodo.pagination import (
     RatingPagination,
     ProductPicturePagination,
     EntitySectionPositionPagination,
+    StoreSectionPositionsUpdateLogPagination,
 )
 from solotodo.permissions import RatingPermission
 from solotodo.serializers import (
@@ -171,6 +174,7 @@ from solotodo.serializers import (
     EntityAiAssociationResultSerializer,
     EntityAiSimilarProductEntrySerializer,
     EntityAiNestedProductSerializer,
+    StoreSectionPositionsUpdateLogSerializer,
 )
 from solotodo.tasks import send_historic_entity_positions_report_task
 from solotodo.utils import get_client_ip, iterable_to_dict
@@ -730,10 +734,65 @@ class StoreUpdateLogViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True)
     def registry(self, request, *args, **kwargs):
+        section_positions_update_log = self.get_object()
+        search = (
+            Search(using=settings.ES, index="logs-store_update")
+            .filter("term", update_log_id=section_positions_update_log.id)
+            .sort({"@timestamp": {"order": "desc"}})
+        )
+        registry = []
+        for entry in search.iterate():
+            registry.append(
+                {
+                    "timestamp": entry["@timestamp"],
+                    "level": entry.level,
+                    "message": entry.message,
+                }
+            )
+        return JsonResponse(registry, safe=False)
+
+
+class StoreSectionPositionsUpdateLogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = StoreSectionPositionsUpdateLog.objects.all()
+    serializer_class = StoreSectionPositionsUpdateLogSerializer
+    pagination_class = StoreSectionPositionsUpdateLogPagination
+    filter_backends = (rest_framework.DjangoFilterBackend, OrderingFilter)
+    filterset_class = StoreSectionPositionsUpdateLogFilterSet
+    ordering_fields = ("last_updated",)
+
+    @action(detail=False)
+    def latest(self, request, *args, **kwargs):
+        stores = create_store_filter("view_store_update_logs")(
+            self.request
+        ).filter_by_section_positions_support()
+
+        result = {}
+
+        for store in stores:
+            store_url = reverse(
+                "store-detail", kwargs={"pk": store.pk}, request=request
+            )
+            store_latest_log = store.storesectionpositionsupdatelog_set.order_by("-pk")[
+                :1
+            ]
+
+            if store_latest_log:
+                store_latest_log = StoreSectionPositionsUpdateLogSerializer(
+                    store_latest_log[0], context={"request": request}
+                ).data
+            else:
+                store_latest_log = None
+
+            result[store_url] = store_latest_log
+
+        return JsonResponse(result)
+
+    @action(detail=True)
+    def registry(self, request, *args, **kwargs):
         update_log = self.get_object()
         search = (
             Search(using=settings.ES, index="logs-store_update")
-            .filter("term", update_log_id=update_log.id)
+            .filter("term", section_positions_update_log_id=update_log.id)
             .sort({"@timestamp": {"order": "desc"}})
         )
         registry = []

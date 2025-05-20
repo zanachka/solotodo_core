@@ -31,6 +31,7 @@ from solotodo.models import (
     ProductVideo,
     Bundle,
     Coupon,
+    StoreSectionPositionsUpdateLog,
 )
 from solotodo.serializer_utils import (
     StorePrimaryKeyRelatedField,
@@ -504,10 +505,24 @@ class StoreUpdateLogSerializer(serializers.HyperlinkedModelSerializer):
             "discovery_url_concurrency",
             "products_for_url_concurrency",
             "use_async",
-            "registry_file",
             "available_products_count",
             "unavailable_products_count",
             "discovery_urls_without_products_count",
+        )
+
+
+class StoreSectionPositionsUpdateLogSerializer(serializers.HyperlinkedModelSerializer):
+    class Meta:
+        model = StoreSectionPositionsUpdateLog
+        fields = (
+            "url",
+            "id",
+            "store",
+            "status",
+            "creation_date",
+            "last_updated",
+            "concurrency",
+            "use_async",
         )
 
 

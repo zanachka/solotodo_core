@@ -6,7 +6,14 @@ from solotodo.memcached_limiter import (
     ConcurrencyLimitReached,
     memcached_site_limit,
 )
-from solotodo.models import Store, Category, StoreUpdateLog, Product, Entity
+from solotodo.models import (
+    Store,
+    Category,
+    StoreUpdateLog,
+    Product,
+    Entity,
+    StoreSectionPositionsUpdateLog,
+)
 from storescraper.store import StoreScrapError
 
 
@@ -152,7 +159,6 @@ def store_category_update_pricing(
             update_log = StoreUpdateLog.objects.get(pk=update_log_id)
             store.update_pricing_category(
                 category,
-                discover_urls_concurrency,
                 products_for_url_concurrency,
                 use_async,
                 update_log,
@@ -166,7 +172,7 @@ def store_category_update_pricing(
             self.request.concurrency_retry_count = concurrency_retry_count + 1
             delay = 3
             print(f"Delaying for: {delay}")
-            raise self.retry(exc=e, countdown=delay)
+            raise self.retry(exc=e, countdown=delay, max_retries=100)
     except StoreScrapError as e:
         store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
         if store_scrap_error_count > 3:
@@ -210,7 +216,53 @@ def store_create_or_update_entity_from_discovery_url(
             self.request.concurrency_retry_count = concurrency_retry_count + 1
             delay = 3
             print(f"Delaying for: {delay}")
-            raise self.retry(exc=e, countdown=delay)
+            raise self.retry(exc=e, countdown=delay, max_retries=100)
+    except StoreScrapError as e:
+        store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
+        if store_scrap_error_count > 3:
+            raise
+        else:
+            self.request.store_scrap_error_count = store_scrap_error_count + 1
+            raise self.retry(exc=e, countdown=3, max_retries=3)
+
+
+@shared_task(
+    bind=True,
+    queue="storescraper",
+    ignore_result=True,
+)
+def store_update_individual_section_positions(
+    self,
+    store_id,
+    section,
+    concurrency,
+    section_positions_update_log_id,
+    extra_args,
+):
+    print(f"Section {section} Update Pricing retry # {self.request.retries}")
+    try:
+        with memcached_site_limit(
+            f"{store_id}_section_positions",
+            limit=concurrency,
+        ):
+            store = Store.objects.get(pk=store_id)
+            update_log = StoreSectionPositionsUpdateLog.objects.get(
+                pk=section_positions_update_log_id
+            )
+            store.update_individual_section_positions(
+                section,
+                update_log,
+                extra_args,
+            )
+    except ConcurrencyLimitReached as e:
+        concurrency_retry_count = getattr(self.request, "concurrency_retry_count", 0)
+        if concurrency_retry_count > 100:
+            raise
+        else:
+            self.request.concurrency_retry_count = concurrency_retry_count + 1
+            delay = 3
+            print(f"Delaying for: {delay}")
+            raise self.retry(exc=e, countdown=delay, max_retries=100)
     except StoreScrapError as e:
         store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
         if store_scrap_error_count > 3:

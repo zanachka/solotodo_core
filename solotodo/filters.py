@@ -26,6 +26,7 @@ from solotodo.models import (
     Brand,
     StoreSection,
     EntitySectionPosition,
+    StoreSectionPositionsUpdateLog,
 )
 
 
@@ -106,6 +107,23 @@ class StoreUpdateLogFilterSet(rest_framework.FilterSet):
 
     class Meta:
         model = StoreUpdateLog
+        fields = ("store",)
+
+
+class StoreSectionPositionsUpdateLogFilterSet(rest_framework.FilterSet):
+    @property
+    def qs(self):
+        qs = super(StoreSectionPositionsUpdateLogFilterSet, self).qs
+
+        if self.request:
+            stores_with_permission = Store.objects.filter_by_user_perms(
+                self.request.user, "view_store_update_logs"
+            )
+            qs = qs.filter(store__in=stores_with_permission)
+        return qs
+
+    class Meta:
+        model = StoreSectionPositionsUpdateLog
         fields = ("store",)
 
 

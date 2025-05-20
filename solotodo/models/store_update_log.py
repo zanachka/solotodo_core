@@ -6,7 +6,6 @@ from django.core.cache import cache
 
 from .category import Category
 from .store import Store
-from solotodo_core.s3utils import PrivateS3Boto3Storage
 
 
 class StoreUpdateLog(models.Model):
@@ -28,13 +27,6 @@ class StoreUpdateLog(models.Model):
     discovery_url_concurrency = models.IntegerField(null=True, blank=True)
     products_for_url_concurrency = models.IntegerField(null=True, blank=True)
     use_async = models.BooleanField(null=True)
-    registry_file = models.FileField(
-        storage=PrivateS3Boto3Storage(),
-        upload_to="logs/scrapings",
-        null=True,
-        blank=True,
-    )
-
     available_products_count = models.IntegerField(null=True, blank=True)
     unavailable_products_count = models.IntegerField(null=True, blank=True)
     discovery_urls_without_products_count = models.IntegerField(null=True, blank=True)

@@ -61,6 +61,18 @@ class StoreQuerySet(models.QuerySet):
 
         return self.filter(pk__in=store_ids)
 
+    def filter_by_section_positions_support(self):
+        stores_with_section_positions_support = []
+        for store in self.filter(last_activation__isnull=False):
+            try:
+                _ = store.scraper.sections()
+                stores_with_section_positions_support.append(store)
+            except NotImplementedError:
+                # The scraper of the store does not implement sections method
+                pass
+
+        return self.filter(pk__in=[s.id for s in stores_with_section_positions_support])
+
 
 class Store(models.Model):
     name = models.CharField(max_length=255, db_index=True, unique=True)
@@ -398,13 +410,7 @@ class Store(models.Model):
         logging_payload = {
             "message": "Started pricing update for: "
             + ", ".join(category.name for category in categories),
-            "store_name": self.name,
             "update_log_id": update_log.id,
-            "discover_urls_concurrency": discover_urls_concurrency,
-            "products_for_url_concurrency": products_for_url_concurrency,
-            "use_async": use_async,
-            "extra_args": extra_args,
-            "category_names": [category.name for category in categories],
         }
         logger.info(json.dumps(logging_payload))
 
@@ -429,7 +435,6 @@ class Store(models.Model):
                 update_log.increment_task_counter()
                 self.update_pricing_category(
                     category,
-                    discover_urls_concurrency,
                     products_for_url_concurrency,
                     use_async,
                     update_log,
@@ -441,7 +446,6 @@ class Store(models.Model):
     def update_pricing_category(
         self,
         category,
-        discover_urls_concurrency,
         products_for_url_concurrency,
         use_async,
         update_log,
@@ -452,13 +456,7 @@ class Store(models.Model):
         logger = logging.getLogger("logstash")
         logging_payload = {
             "message": "Started category pricing update: " + str(category),
-            "store_name": self.name,
             "update_log_id": update_log.id,
-            "discover_urls_concurrency": discover_urls_concurrency,
-            "products_for_url_concurrency": products_for_url_concurrency,
-            "use_async": use_async,
-            "extra_args": extra_args,
-            "category_name": category.name,
         }
         logger.info(json.dumps(logging_payload))
         discovered_urls = []
@@ -511,10 +509,7 @@ class Store(models.Model):
             update_log.save()
             payload = {
                 "message": f"Error: {e}",
-                "store_name": self.name,
                 "update_log_id": update_log.id,
-                "extra_args": extra_args,
-                "category_name": category.name,
             }
             logger.error(json.dumps(payload))
             raise
@@ -559,7 +554,6 @@ class Store(models.Model):
                         {
                             "message": "Scraped product " + str(scraped_product),
                             "update_log_id": update_log.id,
-                            "discovery_url": discovery_url,
                         }
                     )
                 )
@@ -586,11 +580,7 @@ class Store(models.Model):
             exception_text = "".join(traceback.format_exception(e))
             payload = {
                 "message": f"Error retrieving URL {discovery_url}: {exception_text}",
-                "store_name": self.name,
                 "update_log_id": update_log.id,
-                "extra_args": extra_args,
-                "category_name": category.name,
-                "discovery_url": discovery_url,
             }
             logger.error(json.dumps(payload))
             raise
@@ -603,6 +593,141 @@ class Store(models.Model):
 
         cache_key = f"SCRAPING_{update_log.id}_{discovery_url}"
         cache.set(cache_key, json.dumps(scraped_keys), 60 * 60)
+        update_log.decrement_task_counter()
+
+    def update_section_positions(
+        self,
+        sections=None,
+        concurrency=None,
+        use_async=None,
+        update_log=None,
+        extra_args=None,
+    ):
+        from solotodo.models import StoreSectionPositionsUpdateLog
+        from solotodo.tasks import store_update_individual_section_positions
+
+        assert self.last_activation is not None
+
+        # The preferred_discover_urls_concurrency is a reasonable default
+        if not concurrency:
+            concurrency = self.scraper.preferred_discover_urls_concurrency
+
+        if use_async is None:
+            use_async = self.scraper.prefer_async
+
+        if not update_log:
+            update_log = StoreSectionPositionsUpdateLog.objects.create(
+                store=self,
+                status=StoreSectionPositionsUpdateLog.IN_PROCESS,
+                concurrency=concurrency,
+                use_async=use_async,
+            )
+
+        if extra_args:
+            extra_args = self.storescraper_extra_args_as_json() | extra_args
+        else:
+            extra_args = self.storescraper_extra_args_as_json()
+
+        if not sections:
+            sections = self.scraper.sections()
+
+        logger = logging.getLogger("logstash")
+        logging_payload = {
+            "message": "Started section positions update for: " + ", ".join(sections),
+            "section_positions_update_log_id": update_log.id,
+        }
+        logger.info(json.dumps(logging_payload))
+
+        if use_async:
+            update_log.initialize_task_counter(0)
+            for section in sections:
+                update_log.increment_task_counter()
+
+                if use_async:
+                    store_update_individual_section_positions.delay(
+                        self.id,
+                        section,
+                        concurrency,
+                        update_log.id,
+                        extra_args,
+                    )
+        else:
+            update_log.initialize_task_counter(1)
+            for section in sections:
+                update_log.increment_task_counter()
+                self.update_individual_section_positions(
+                    section,
+                    update_log,
+                    extra_args,
+                )
+            update_log.decrement_task_counter()
+        return update_log
+
+    def update_individual_section_positions(
+        self,
+        section,
+        update_log,
+        extra_args,
+    ):
+        from solotodo.models import StoreSection, EntitySectionPosition
+
+        logger = logging.getLogger("logstash")
+        logging_payload = {
+            "message": "Started section position update: " + section,
+            "section_positions_update_log_id": update_log.id,
+        }
+        logger.info(json.dumps(logging_payload))
+
+        try:
+            logger.info(
+                json.dumps(
+                    {
+                        "message": "Discovering section positions for: " + str(section),
+                        "section_positions_update_log_id": update_log.id,
+                    }
+                )
+            )
+            sections_dict = {}
+            for (
+                section_position
+            ) in self.scraper.section_positions_with_custom_exception(
+                section, extra_args=extra_args
+            ):
+                if section_position["section"] in sections_dict:
+                    store_section = sections_dict[section_position["section"]]
+                else:
+                    store_section, _created = StoreSection.objects.get_or_create(
+                        store=self, name=section_position["section"]
+                    )
+                    sections_dict[section_position["section"]] = store_section
+
+                entities_filter = {section_position["field"]: section_position["value"]}
+                entities_for_update = self.entity_set.get_active().filter(
+                    **entities_filter
+                )
+                for entity in entities_for_update:
+                    logger.info(
+                        json.dumps(
+                            {
+                                "message": f"Setting {entity}: {store_section.name} - {section_position['position']}",
+                                "section_positions_update_log_id": update_log.id,
+                            }
+                        )
+                    )
+                    EntitySectionPosition.objects.create(
+                        entity_history=entity.active_registry,
+                        section=store_section,
+                        value=section_position["position"],
+                    )
+        except Exception as e:
+            update_log.status = update_log.ERROR
+            update_log.save()
+            payload = {
+                "message": f"Error: {e}",
+                "section_positions_update_log_id": update_log.id,
+            }
+            logger.error(json.dumps(payload))
+            raise
         update_log.decrement_task_counter()
 
     class Meta:
