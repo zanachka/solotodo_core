@@ -1,3 +1,6 @@
+import json
+import logging
+
 from celery import shared_task
 from django.core.mail import EmailMessage
 from django.http import QueryDict
@@ -149,14 +152,16 @@ def store_category_update_pricing(
     extra_args,
 ):
     category = Category.objects.get(pk=category_id)
+    logger = logging.getLogger("logstash")
+    update_log = StoreUpdateLog.objects.get(pk=update_log_id)
     print(f"Category {category} Update Pricing retry # {self.request.retries}")
+
     try:
         with memcached_site_limit(
             f"{store_id}_discover_entries",
             limit=discover_urls_concurrency,
         ):
             store = Store.objects.get(pk=store_id)
-            update_log = StoreUpdateLog.objects.get(pk=update_log_id)
             store.update_pricing_category(
                 category,
                 products_for_url_concurrency,
@@ -171,13 +176,20 @@ def store_category_update_pricing(
         else:
             self.request.concurrency_retry_count = concurrency_retry_count + 1
             delay = 3
-            print(f"Delaying for: {delay}")
             raise self.retry(exc=e, countdown=delay, max_retries=100)
     except StoreScrapError as e:
         store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
         if store_scrap_error_count > 3:
+            update_log.status = update_log.ERROR
+            update_log.save()
+            payload = {
+                "message": f"Error: {e}",
+                "update_log_id": update_log.id,
+            }
+            logger.error(json.dumps(payload))
             raise
         else:
+            update_log.decrement_task_counter()
             self.request.store_scrap_error_count = store_scrap_error_count + 1
             raise self.retry(exc=e, countdown=3, max_retries=3)
 
@@ -197,6 +209,8 @@ def store_create_or_update_entity_from_discovery_url(
     products_for_url_concurrency,
 ):
     print(f"Create or update entity retry # {self.request.retries}")
+    update_log = StoreUpdateLog.objects.get(pk=update_log_id)
+    logger = logging.getLogger("logstash")
     try:
         with memcached_site_limit(
             f"{store_id}_products_for_url",
@@ -204,7 +218,6 @@ def store_create_or_update_entity_from_discovery_url(
         ):
             store = Store.objects.get(pk=store_id)
             category = Category.objects.get(pk=category_id)
-            update_log = StoreUpdateLog.objects.get(pk=update_log_id)
             store.create_or_update_entity_from_discovery_url(
                 update_log, discovery_url, category, extra_args
             )
@@ -215,13 +228,20 @@ def store_create_or_update_entity_from_discovery_url(
         else:
             self.request.concurrency_retry_count = concurrency_retry_count + 1
             delay = 3
-            print(f"Delaying for: {delay}")
             raise self.retry(exc=e, countdown=delay, max_retries=100)
     except StoreScrapError as e:
         store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
         if store_scrap_error_count > 3:
+            update_log.status = update_log.ERROR
+            update_log.save()
+            payload = {
+                "message": f"Error: {e}",
+                "update_log_id": update_log.id,
+            }
+            logger.error(json.dumps(payload))
             raise
         else:
+            update_log.decrement_task_counter()
             self.request.store_scrap_error_count = store_scrap_error_count + 1
             raise self.retry(exc=e, countdown=3, max_retries=3)
 
@@ -240,15 +260,18 @@ def store_update_individual_section_positions(
     extra_args,
 ):
     print(f"Section {section} Update Pricing retry # {self.request.retries}")
+
+    update_log = StoreSectionPositionsUpdateLog.objects.get(
+        pk=section_positions_update_log_id
+    )
+    logger = logging.getLogger("logstash")
+
     try:
         with memcached_site_limit(
             f"{store_id}_section_positions",
             limit=concurrency,
         ):
             store = Store.objects.get(pk=store_id)
-            update_log = StoreSectionPositionsUpdateLog.objects.get(
-                pk=section_positions_update_log_id
-            )
             store.update_individual_section_positions(
                 section,
                 update_log,
@@ -261,12 +284,19 @@ def store_update_individual_section_positions(
         else:
             self.request.concurrency_retry_count = concurrency_retry_count + 1
             delay = 3
-            print(f"Delaying for: {delay}")
             raise self.retry(exc=e, countdown=delay, max_retries=100)
     except StoreScrapError as e:
         store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
         if store_scrap_error_count > 3:
+            update_log.status = update_log.ERROR
+            update_log.save()
+            payload = {
+                "message": f"Error: {e}",
+                "section_positions_update_log_id": update_log.id,
+            }
+            logger.error(json.dumps(payload))
             raise
         else:
+            update_log.decrement_task_counter()
             self.request.store_scrap_error_count = store_scrap_error_count + 1
             raise self.retry(exc=e, countdown=3, max_retries=3)

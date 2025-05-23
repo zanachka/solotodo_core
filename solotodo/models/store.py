@@ -397,7 +397,7 @@ class Store(models.Model):
         if not categories:
             update_log.status = update_log.ERROR
             update_log.save()
-            return
+            return update_log
 
         update_log.discovery_url_concurrency = discover_urls_concurrency
         update_log.products_for_url_concurrency = products_for_url_concurrency
@@ -460,59 +460,46 @@ class Store(models.Model):
         }
         logger.info(json.dumps(logging_payload))
         discovered_urls = []
-
-        try:
-            logger.info(
-                json.dumps(
-                    {
-                        "message": "Discovering URLs for category: " + str(category),
-                        "update_log_id": update_log.id,
-                    }
-                )
+        logger.info(
+            json.dumps(
+                {
+                    "message": "Discovering URLs for category: " + str(category),
+                    "update_log_id": update_log.id,
+                }
             )
-            for (
-                discovery_url
-            ) in self.scraper.discover_urls_for_category_with_custom_exception(
-                category.storescraper_name, extra_args=extra_args
-            ):
-                cache_key = f"SCRAPING_{update_log.id}_{discovery_url}"
-                already_scraped_product_keys = cache.get(cache_key)
-                if already_scraped_product_keys:
-                    # The discovery url has already been resolved by another process recently. Skip its
-                    # scraping, we just need to add our category to its scraped_categories
-                    already_scraped_product_keys = json.loads(
-                        already_scraped_product_keys
+        )
+        for (
+            discovery_url
+        ) in self.scraper.discover_urls_for_category_with_custom_exception(
+            category.storescraper_name, extra_args=extra_args
+        ):
+            cache_key = f"SCRAPING_{update_log.id}_{discovery_url}"
+            already_scraped_product_keys = cache.get(cache_key)
+            if already_scraped_product_keys:
+                # The discovery url has already been resolved by another process recently. Skip its
+                # scraping, we just need to add our category to its scraped_categories
+                already_scraped_product_keys = json.loads(already_scraped_product_keys)
+                already_updated_entities = self.entity_set.filter(
+                    key__in=already_scraped_product_keys
+                )
+                for entity in already_updated_entities:
+                    entity.scraped_categories.add(category)
+            else:
+                update_log.increment_task_counter()
+                if use_async:
+                    store_create_or_update_entity_from_discovery_url.delay(
+                        self.id,
+                        update_log.id,
+                        discovery_url,
+                        category.id,
+                        extra_args,
+                        products_for_url_concurrency,
                     )
-                    already_updated_entities = self.entity_set.filter(
-                        key__in=already_scraped_product_keys
-                    )
-                    for entity in already_updated_entities:
-                        entity.scraped_categories.add(category)
                 else:
-                    update_log.increment_task_counter()
-                    if use_async:
-                        store_create_or_update_entity_from_discovery_url.delay(
-                            self.id,
-                            update_log.id,
-                            discovery_url,
-                            category.id,
-                            extra_args,
-                            products_for_url_concurrency,
-                        )
-                    else:
-                        self.create_or_update_entity_from_discovery_url(
-                            update_log, discovery_url, category, extra_args
-                        )
-                discovered_urls.append(discovery_url)
-        except Exception as e:
-            update_log.status = update_log.ERROR
-            update_log.save()
-            payload = {
-                "message": f"Error: {e}",
-                "update_log_id": update_log.id,
-            }
-            logger.error(json.dumps(payload))
-            raise
+                    self.create_or_update_entity_from_discovery_url(
+                        update_log, discovery_url, category, extra_args
+                    )
+            discovered_urls.append(discovery_url)
 
         # Mark the DB entities that were not detected as inactive
         entities_for_update = (
@@ -678,56 +665,34 @@ class Store(models.Model):
         }
         logger.info(json.dumps(logging_payload))
 
-        try:
-            logger.info(
-                json.dumps(
-                    {
-                        "message": "Discovering section positions for: " + str(section),
-                        "section_positions_update_log_id": update_log.id,
-                    }
+        sections_dict = {}
+        for section_position in self.scraper.section_positions_with_custom_exception(
+            section, extra_args=extra_args
+        ):
+            if section_position["section"] in sections_dict:
+                store_section = sections_dict[section_position["section"]]
+            else:
+                store_section, _created = StoreSection.objects.get_or_create(
+                    store=self, name=section_position["section"]
                 )
-            )
-            sections_dict = {}
-            for (
-                section_position
-            ) in self.scraper.section_positions_with_custom_exception(
-                section, extra_args=extra_args
-            ):
-                if section_position["section"] in sections_dict:
-                    store_section = sections_dict[section_position["section"]]
-                else:
-                    store_section, _created = StoreSection.objects.get_or_create(
-                        store=self, name=section_position["section"]
-                    )
-                    sections_dict[section_position["section"]] = store_section
+                sections_dict[section_position["section"]] = store_section
 
-                entities_filter = {section_position["field"]: section_position["value"]}
-                entities_for_update = self.entity_set.get_active().filter(
-                    **entities_filter
+            entities_filter = {section_position["field"]: section_position["value"]}
+            entities_for_update = self.entity_set.get_active().filter(**entities_filter)
+            for entity in entities_for_update:
+                logger.info(
+                    json.dumps(
+                        {
+                            "message": f"Setting {entity}: {store_section.name} - {section_position['position']}",
+                            "section_positions_update_log_id": update_log.id,
+                        }
+                    )
                 )
-                for entity in entities_for_update:
-                    logger.info(
-                        json.dumps(
-                            {
-                                "message": f"Setting {entity}: {store_section.name} - {section_position['position']}",
-                                "section_positions_update_log_id": update_log.id,
-                            }
-                        )
-                    )
-                    EntitySectionPosition.objects.create(
-                        entity_history=entity.active_registry,
-                        section=store_section,
-                        value=section_position["position"],
-                    )
-        except Exception as e:
-            update_log.status = update_log.ERROR
-            update_log.save()
-            payload = {
-                "message": f"Error: {e}",
-                "section_positions_update_log_id": update_log.id,
-            }
-            logger.error(json.dumps(payload))
-            raise
+                EntitySectionPosition.objects.create(
+                    entity_history=entity.active_registry,
+                    section=store_section,
+                    value=section_position["position"],
+                )
         update_log.decrement_task_counter()
 
     class Meta:
