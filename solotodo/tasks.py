@@ -176,7 +176,7 @@ def store_category_update_pricing(
         else:
             self.request.concurrency_retry_count = concurrency_retry_count + 1
             delay = 3
-            raise self.retry(exc=e, countdown=delay, max_retries=100)
+            raise self.retry(exc=e, countdown=delay, max_retries=300)
     except StoreScrapError as e:
         store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
         if store_scrap_error_count > 3:
@@ -228,7 +228,7 @@ def store_create_or_update_entity_from_discovery_url(
         else:
             self.request.concurrency_retry_count = concurrency_retry_count + 1
             delay = 3
-            raise self.retry(exc=e, countdown=delay, max_retries=100)
+            raise self.retry(exc=e, countdown=delay, max_retries=300)
     except StoreScrapError as e:
         store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
         if store_scrap_error_count > 3:
@@ -284,7 +284,7 @@ def store_update_individual_section_positions(
         else:
             self.request.concurrency_retry_count = concurrency_retry_count + 1
             delay = 3
-            raise self.retry(exc=e, countdown=delay, max_retries=100)
+            raise self.retry(exc=e, countdown=delay, max_retries=300)
     except StoreScrapError as e:
         store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
         if store_scrap_error_count > 3:
