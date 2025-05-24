@@ -1,5 +1,6 @@
 import json
 import logging
+import traceback
 
 from celery import shared_task
 from django.core.mail import EmailMessage
@@ -179,7 +180,7 @@ def store_category_update_pricing(
             raise self.retry(exc=e, countdown=delay, max_retries=300)
     except StoreScrapError as e:
         store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
-        if store_scrap_error_count > 3:
+        if store_scrap_error_count > 5:
             update_log.status = update_log.ERROR
             update_log.save()
             payload = {
@@ -191,7 +192,16 @@ def store_category_update_pricing(
         else:
             update_log.decrement_task_counter()
             self.request.store_scrap_error_count = store_scrap_error_count + 1
-            raise self.retry(exc=e, countdown=3, max_retries=3)
+            raise self.retry(exc=e, countdown=10, max_retries=5)
+    except Exception as e:
+        update_log.status = update_log.ERROR
+        update_log.save()
+        payload = {
+            "message": f"Error: {e}",
+            "update_log_id": update_log.id,
+        }
+        logger.error(json.dumps(payload))
+        raise
 
 
 @shared_task(
@@ -231,7 +241,7 @@ def store_create_or_update_entity_from_discovery_url(
             raise self.retry(exc=e, countdown=delay, max_retries=300)
     except StoreScrapError as e:
         store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
-        if store_scrap_error_count > 3:
+        if store_scrap_error_count > 5:
             update_log.status = update_log.ERROR
             update_log.save()
             payload = {
@@ -243,7 +253,16 @@ def store_create_or_update_entity_from_discovery_url(
         else:
             update_log.decrement_task_counter()
             self.request.store_scrap_error_count = store_scrap_error_count + 1
-            raise self.retry(exc=e, countdown=3, max_retries=3)
+            raise self.retry(exc=e, countdown=10, max_retries=5)
+    except Exception as e:
+        update_log.status = update_log.ERROR
+        update_log.save()
+        payload = {
+            "message": f"Error: {e}",
+            "update_log_id": update_log.id,
+        }
+        logger.error(json.dumps(payload))
+        raise
 
 
 @shared_task(
@@ -287,7 +306,7 @@ def store_update_individual_section_positions(
             raise self.retry(exc=e, countdown=delay, max_retries=300)
     except StoreScrapError as e:
         store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
-        if store_scrap_error_count > 3:
+        if store_scrap_error_count > 5:
             update_log.status = update_log.ERROR
             update_log.save()
             payload = {
@@ -299,4 +318,13 @@ def store_update_individual_section_positions(
         else:
             update_log.decrement_task_counter()
             self.request.store_scrap_error_count = store_scrap_error_count + 1
-            raise self.retry(exc=e, countdown=3, max_retries=3)
+            raise self.retry(exc=e, countdown=10, max_retries=5)
+    except Exception:
+        update_log.status = update_log.ERROR
+        update_log.save()
+        payload = {
+            "message": f"Error: {traceback.format_exc()}",
+            "section_positions_update_log_id": update_log.id,
+        }
+        logger.error(json.dumps(payload))
+        raise

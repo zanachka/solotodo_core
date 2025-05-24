@@ -536,7 +536,7 @@ class Store(models.Model):
         try:
             products_found = False
             for scraped_product in self.scraper.products_for_url_with_custom_exception(
-                discovery_url, category, extra_args=extra_args
+                discovery_url, category.storescraper_name, extra_args=extra_args
             ):
                 logger.info(
                     json.dumps(
