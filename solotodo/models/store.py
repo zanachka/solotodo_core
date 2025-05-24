@@ -392,6 +392,8 @@ class Store(models.Model):
         else:
             extra_args = self.storescraper_extra_args_as_json()
 
+        extra_args = self.scraper.extra_args_with_preflight(extra_args)
+
         categories = self.sanitize_categories_for_update(categories)
 
         if not categories:
