@@ -240,25 +240,12 @@ LOGGING = {
             "level": "ERROR",
             "class": "solotodo_core.email_handler.ThrottledAdminEmailHandler",
         },
-        "console": {
-            "level": "DEBUG",
-            "class": "logging.StreamHandler",
-        },
     },
     "loggers": {
         "django": {
             "handlers": ["mail_admins"],
             "level": "ERROR",
             "propagate": True,
-        },
-        "werkzeug": {
-            "handlers": ["console"],
-            "level": "DEBUG",
-            "propagate": True,
-        },
-        "django_extensions.management.commands.runserver_plus": {
-            "handlers": ["console"],
-            "level": "INFO",
         },
     },
 }

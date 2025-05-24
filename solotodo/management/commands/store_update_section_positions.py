@@ -20,15 +20,10 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         store_names = options["stores"]
         extra_args = options["extra_args"]
-        stores = Store.objects.filter(last_activation__isnull=False)
+        stores = Store.objects.filter_by_section_positions_support()
 
         if store_names:
             stores = stores.filter(name__in=store_names)
 
         for store in stores:
-            try:
-                store.scraper
-            except AttributeError:
-                continue
-
-            store.update_pricing(extra_args=extra_args)
+            store.update_section_positions(extra_args=extra_args)

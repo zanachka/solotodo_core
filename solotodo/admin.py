@@ -37,6 +37,7 @@ from solotodo.models import (
     Bundle,
     Coupon,
     ProductFieldWatcher,
+    StoreSectionPositionsUpdateLog,
 )
 
 
@@ -190,6 +191,7 @@ class StoreModelAdmin(GuardedModelAdmin):
 
 
 admin.site.register(StoreUpdateLog)
+admin.site.register(StoreSectionPositionsUpdateLog)
 
 
 @admin.register(Lead)

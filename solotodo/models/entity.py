@@ -239,6 +239,7 @@ class Entity(models.Model):
     scraped_category = models.ForeignKey(
         Category, on_delete=models.CASCADE, related_name="+"
     )
+    scraped_categories = models.ManyToManyField(Category, blank=True, related_name="+")
     currency = models.ForeignKey(Currency, on_delete=models.CASCADE)
     condition = models.URLField(choices=CONDITION_CHOICES, db_index=True)
     scraped_condition = models.URLField(choices=CONDITION_CHOICES, db_index=True)
@@ -332,9 +333,9 @@ class Entity(models.Model):
         return False
 
     def update_with_scraped_product(
-        self, scraped_product, sections_dict={}, category=None, currency=None
+        self, scraped_product, category=None, currency=None
     ):
-        from solotodo.models import EntityHistory, StoreSection, EntitySectionPosition
+        from solotodo.models import EntityHistory
 
         assert scraped_product is None or self.key == scraped_product.key
 
@@ -369,20 +370,6 @@ class Entity(models.Model):
                 review_avg_score=scraped_product.review_avg_score,
             )
 
-            for section_name, position_value in scraped_product.positions:
-                store_section = sections_dict.get(section_name)
-
-                if not store_section:
-                    store_section = StoreSection.objects.get_or_create(
-                        store=self.store, name=section_name
-                    )[0]
-
-                EntitySectionPosition.objects.create(
-                    section=store_section,
-                    entity_history=new_active_registry,
-                    value=position_value,
-                )
-
             updated_data.update(
                 {
                     "name": scraped_product.name,
@@ -415,39 +402,50 @@ class Entity(models.Model):
             updated_data.update({"active_registry": None})
 
         self.update_keeping_log(updated_data)
+        self.scraped_categories.add(category)
 
     @classmethod
     def create_from_scraped_product(
-        cls, scraped_product, store, category, currency, sections_dict
+        cls, scraped_product, store, category, currency=None
     ):
-        from solotodo.models import EntityHistory, StoreSection, EntitySectionPosition
+        from solotodo.models import EntityHistory
 
-        new_entity = cls.objects.create(
-            store=store,
-            category=category,
-            scraped_category=category,
-            currency=currency,
-            condition=scraped_product.condition,
-            scraped_condition=scraped_product.condition,
-            name=scraped_product.name,
-            cell_plan_name=scraped_product.cell_plan_name,
-            part_number=scraped_product.part_number,
-            sku=scraped_product.sku,
-            ean=scraped_product.ean,
-            key=scraped_product.key,
-            url=scraped_product.url,
-            discovery_url=scraped_product.discovery_url,
-            picture_urls=scraped_product.picture_urls_as_json(),
-            video_urls=scraped_product.video_urls_as_json(),
-            description=scraped_product.description,
-            flixmedia_id=scraped_product.flixmedia_id,
-            seller=scraped_product.seller,
-            review_count=scraped_product.review_count,
-            review_avg_score=scraped_product.review_avg_score,
-            has_virtual_assistant=scraped_product.has_virtual_assistant,
-            is_visible=True,
-            last_pricing_update=timezone.now(),
-        )
+        if not currency:
+            currency = Currency.objects.get(iso_code=scraped_product.currency)
+
+        try:
+            new_entity = cls.objects.create(
+                store=store,
+                category=category,
+                scraped_category=category,
+                currency=currency,
+                condition=scraped_product.condition,
+                scraped_condition=scraped_product.condition,
+                name=scraped_product.name,
+                cell_plan_name=scraped_product.cell_plan_name,
+                part_number=scraped_product.part_number,
+                sku=scraped_product.sku,
+                ean=scraped_product.ean,
+                key=scraped_product.key,
+                url=scraped_product.url,
+                discovery_url=scraped_product.discovery_url,
+                picture_urls=scraped_product.picture_urls_as_json(),
+                video_urls=scraped_product.video_urls_as_json(),
+                description=scraped_product.description,
+                flixmedia_id=scraped_product.flixmedia_id,
+                seller=scraped_product.seller,
+                review_count=scraped_product.review_count,
+                review_avg_score=scraped_product.review_avg_score,
+                has_virtual_assistant=scraped_product.has_virtual_assistant,
+                is_visible=True,
+                last_pricing_update=timezone.now(),
+            )
+        except IntegrityError:
+            # There is the possibility of a race condition in our celery workers, where two of them may try to create
+            # the same entity at almost the same time
+            return
+
+        new_entity.scraped_categories.add(category)
 
         new_entity_history = EntityHistory.objects.create(
             entity=new_entity,
@@ -464,20 +462,6 @@ class Entity(models.Model):
 
         new_entity.active_registry = new_entity_history
         new_entity.save()
-
-        for section_name, position_value in scraped_product.positions:
-            store_section = sections_dict.get(section_name)
-
-            if not store_section:
-                store_section = StoreSection.objects.get_or_create(
-                    store=store, name=section_name
-                )[0]
-
-            EntitySectionPosition.objects.create(
-                section=store_section,
-                entity_history=new_entity_history,
-                value=position_value,
-            )
 
     def update_keeping_log(self, updated_data, user=None):
         from solotodo.models import EntityLog
