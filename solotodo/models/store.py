@@ -563,10 +563,10 @@ class Store(models.Model):
                     Entity.create_from_scraped_product(scraped_product, self, category)
             if not products_found:
                 update_log.increment_discovery_urls_without_products_count()
-        except Exception as e:
+        except Exception:
             update_log.status = update_log.ERROR
             update_log.save()
-            exception_text = "".join(traceback.format_exception(e))
+            exception_text = traceback.format_exc()
             payload = {
                 "message": f"Error retrieving URL {discovery_url}: {exception_text}",
                 "update_log_id": update_log.id,
