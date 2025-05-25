@@ -242,17 +242,18 @@ def store_create_or_update_entity_from_discovery_url(
             raise self.retry(exc=e, countdown=delay, max_retries=300)
     except StoreScrapError as e:
         store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
+        payload = {
+            "message": f"Error: {e}",
+            "update_log_id": update_log.id,
+        }
         if store_scrap_error_count > 5:
             update_log.status = update_log.ERROR
             update_log.save()
-            payload = {
-                "message": f"Error: {e}",
-                "update_log_id": update_log.id,
-            }
             logger.error(json.dumps(payload))
             raise
         else:
             update_log.decrement_task_counter()
+            logger.warning(json.dumps(payload))
             self.request.store_scrap_error_count = store_scrap_error_count + 1
             raise self.retry(exc=e, countdown=10, max_retries=5)
     except Exception as e:
