@@ -13,6 +13,7 @@ from django.utils import timezone
 from guardian.shortcuts import get_objects_for_user, get_objects_for_group
 from sorl.thumbnail import ImageField
 
+from storescraper.store import StoreScrapError
 from .store_type import StoreType
 from .country import Country
 from .category import Category
@@ -566,7 +567,10 @@ class Store(models.Model):
                     Entity.create_from_scraped_product(scraped_product, self, category)
             if not products_found:
                 update_log.increment_discovery_urls_without_products_count()
+        except StoreScrapError:
+            raise
         except Exception:
+            # Something else not related to the scraping itself happened
             update_log.status = update_log.ERROR
             update_log.save()
             exception_text = traceback.format_exc()
