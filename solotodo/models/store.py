@@ -417,8 +417,8 @@ class Store(models.Model):
         logger.info(json.dumps(logging_payload))
 
         if use_async:
-            cache.set(f"{self.id}_discover_entries", 0, expire=60 * 60)
-            cache.set(f"{self.id}_products_for_url", 0, expire=60 * 60)
+            cache.set(f"{self.id}_discover_entries", 0, 60 * 60)
+            cache.set(f"{self.id}_products_for_url", 0, 60 * 60)
 
             update_log.initialize_task_counter(0)
             for category in categories:
