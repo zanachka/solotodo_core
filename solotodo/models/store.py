@@ -635,6 +635,7 @@ class Store(models.Model):
         logger.info(json.dumps(logging_payload))
 
         if use_async:
+            cache.set(f"{self.id}_section_positions", 0, 60 * 60)
             update_log.initialize_task_counter(0)
             for section in sections:
                 update_log.increment_task_counter()
