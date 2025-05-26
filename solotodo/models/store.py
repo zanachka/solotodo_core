@@ -537,49 +537,43 @@ class Store(models.Model):
         existing_entities_dict = {e.key: e for e in existing_entities}
         scraped_keys = []
 
-        try:
-            products_found = False
-            for scraped_product in self.scraper.products_for_url_with_custom_exception(
-                discovery_url, category.storescraper_name, extra_args=extra_args
-            ):
-                logger.info(
-                    json.dumps(
-                        {
-                            "message": "Scraped product " + str(scraped_product),
-                            "update_log_id": update_log.id,
-                        }
-                    )
+        products_found = False
+        for scraped_product in self.scraper.products_for_url_with_custom_exception(
+            discovery_url, category.storescraper_name, extra_args=extra_args
+        ):
+            logger.info(
+                json.dumps(
+                    {
+                        "message": "Scraped product " + str(scraped_product),
+                        "update_log_id": update_log.id,
+                    }
                 )
+            )
 
-                products_found = True
-                scraped_keys.append(scraped_product.key)
-                if scraped_product.is_available():
-                    update_log.increment_available_products_count()
-                else:
-                    update_log.increment_unavailable_products_count()
+            products_found = True
+            scraped_keys.append(scraped_product.key)
+            if scraped_product.is_available():
+                update_log.increment_available_products_count()
+            else:
+                update_log.increment_unavailable_products_count()
 
-                existing_entity = existing_entities_dict.pop(scraped_product.key, None)
-                if existing_entity:
-                    existing_entity.update_with_scraped_product(
-                        scraped_product, category=category
-                    )
-                else:
-                    Entity.create_from_scraped_product(scraped_product, self, category)
-            if not products_found:
-                update_log.increment_discovery_urls_without_products_count()
-        except StoreScrapError:
-            raise
-        except Exception:
-            # Something else not related to the scraping itself happened
-            update_log.status = update_log.ERROR
-            update_log.save()
-            exception_text = traceback.format_exc()
-            payload = {
-                "message": f"Error retrieving URL {discovery_url}: {exception_text}",
-                "update_log_id": update_log.id,
-            }
-            logger.error(json.dumps(payload))
-            raise
+            existing_entity = existing_entities_dict.pop(scraped_product.key, None)
+
+            if not existing_entity:
+                # Check the case of a pre existing entity that changed its discovery_url
+                try:
+                    existing_entity = self.entity_set.get(key=scraped_product.key)
+                except Entity.DoesNotExist:
+                    pass
+
+            if existing_entity:
+                existing_entity.update_with_scraped_product(
+                    scraped_product, category=category
+                )
+            else:
+                Entity.create_from_scraped_product(scraped_product, self, category)
+        if not products_found:
+            update_log.increment_discovery_urls_without_products_count()
 
         for entity in existing_entities_dict.values():
             if entity.active_registry:
