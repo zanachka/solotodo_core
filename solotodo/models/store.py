@@ -2,7 +2,6 @@ import json
 import io
 import base64
 import logging
-import traceback
 
 import xlsxwriter
 from django.contrib.auth.models import Group
@@ -13,7 +12,6 @@ from django.utils import timezone
 from guardian.shortcuts import get_objects_for_user, get_objects_for_group
 from sorl.thumbnail import ImageField
 
-from storescraper.store import StoreScrapError
 from .store_type import StoreType
 from .country import Country
 from .category import Category
