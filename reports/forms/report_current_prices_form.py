@@ -62,7 +62,7 @@ class ReportCurrentPricesForm(forms.Form):
         else:
             return self.fields["stores"].queryset
 
-    def generate_report(self, es_product_search=None):
+    def generate_report(self):
         category = self.cleaned_data["category"]
         stores = self.cleaned_data["stores"]
         products = self.cleaned_data["products"]
@@ -73,11 +73,6 @@ class ReportCurrentPricesForm(forms.Form):
         normal_price_usd_max = self.cleaned_data["normal_price_usd_max"]
 
         entities_filter = Q(product__isnull=False) & Q(store__in=stores)
-
-        if es_product_search:
-            specs_products = [e.product_id for e in es_product_search.iterate()]
-            entities_filter &= Q(product__in=specs_products)
-
         if products:
             entities_filter &= Q(product__in=products)
 
