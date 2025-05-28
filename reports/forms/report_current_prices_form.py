@@ -75,9 +75,7 @@ class ReportCurrentPricesForm(forms.Form):
         entities_filter = Q(product__isnull=False) & Q(store__in=stores)
 
         if es_product_search:
-            specs_products = [
-                e.product_id for e in es_product_search[:100000].execute()
-            ]
+            specs_products = [e.product_id for e in es_product_search.iterate()]
             entities_filter &= Q(product__in=specs_products)
 
         if products:
