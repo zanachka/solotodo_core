@@ -16,23 +16,21 @@ class KeywordSearch(models.Model):
     threshold = models.IntegerField()
     creation_date = models.DateTimeField(auto_now_add=True)
     active_update = models.ForeignKey(
-        'KeywordSearchUpdate', null=True, blank=True,
-        on_delete=models.CASCADE)
+        "KeywordSearchUpdate", null=True, blank=True, on_delete=models.CASCADE
+    )
 
     def __str__(self):
-        return '{} - {} - {} - {}'.format(
-            self.user,
-            self.store,
-            self.keyword,
-            self.creation_date)
+        return "{} - {} - {} - {}".format(
+            self.user, self.store, self.keyword, self.creation_date
+        )
 
-    def update(self, use_async=None):
+    def update(self):
         from .keyword_search_update import KeywordSearchUpdate
         from .keyword_search_entity_position import KeywordSearchEntityPosition
 
         update = KeywordSearchUpdate.objects.create(
-            search=self,
-            status=KeywordSearchUpdate.IN_PROCESS)
+            search=self, status=KeywordSearchUpdate.IN_PROCESS
+        )
 
         self.active_update = update
         self.save()
@@ -43,48 +41,60 @@ class KeywordSearch(models.Model):
             extra_args = {}
 
         try:
-            products = self.store.scraper.products_for_keyword(
-                self.keyword,
-                self.threshold,
-                use_async=use_async,
-                extra_args=extra_args
-            )['products']
+            discovery_urls = self.store.scraper.discover_urls_for_keyword(
+                self.keyword, self.threshold, extra_args=extra_args
+            )
+            print(discovery_urls)
         except Exception as e:
             update.status = KeywordSearchUpdate.ERROR
             update.message = str(e)
             update.save()
-            message = "Error al realizar búsqueda por keyword '{}' ({}) " \
-                      "en tienda {}.\n ERROR: {}"\
-                .format(self.keyword, self.id, self.store, str(e))
+            message = (
+                "Error al realizar búsqueda por keyword '{}' ({}) "
+                "en tienda {}.\n ERROR: {}".format(
+                    self.keyword, self.id, self.store, str(e)
+                )
+            )
             self.send_keyword_mail(message)
-            return
+            return []
 
-        if not products:
+        if not discovery_urls:
             self.send_keyword_mail(
                 "No se encontraron productos "
-                "para el keyword '{}' ({}) en la tienda {}."
-                .format(self.keyword, self.id, self.store))
+                "para el keyword '{}' ({}) en la tienda {}.".format(
+                    self.keyword, self.id, self.store
+                )
+            )
 
-        for idx, product in enumerate(products):
-            try:
-                entity = Entity.objects.get(store=self.store, key=product.key)
-
-                KeywordSearchEntityPosition.objects.create(
-                    entity=entity,
-                    update=update,
-                    value=idx+1)
-
-            except Entity.DoesNotExist:
-                continue
+        created_kw_search_entity_positions = []
+        for idx, discovery_url in enumerate(discovery_urls):
+            products = self.store.scraper.products_for_url(
+                discovery_url,
+                extra_args=extra_args,
+            )
+            for product in products:
+                print(product)
+                try:
+                    entity = Entity.objects.get(store=self.store, key=product.key)
+                    kw_search_entity_position = (
+                        KeywordSearchEntityPosition.objects.create(
+                            entity=entity, update=update, value=idx + 1
+                        )
+                    )
+                    created_kw_search_entity_positions.append(kw_search_entity_position)
+                except Entity.DoesNotExist:
+                    continue
 
         update.status = KeywordSearchUpdate.SUCCESS
         update.save()
+        return created_kw_search_entity_positions
 
     def send_keyword_mail(self, message):
 
         sender = SoloTodoUser.get_bot().email_recipient_text()
-        subject = 'Actualización Keyword Search {} ({})'\
-            .format(self.store, self.category)
+        subject = "Actualización Keyword Search {} ({})".format(
+            self.store, self.category
+        )
         recipients = []
 
         for admin in settings.ADMINS:
@@ -95,6 +105,7 @@ class KeywordSearch(models.Model):
 
     def save(self, *args, **kwargs):
         from keyword_search_positions.tasks import keyword_search_update
+
         should_update = not self.id
         super(KeywordSearch, self).save(*args, **kwargs)
 
@@ -102,9 +113,11 @@ class KeywordSearch(models.Model):
             keyword_search_update.delay(self.id)
 
     class Meta:
-        app_label = 'keyword_search_positions'
-        ordering = ('-creation_date',)
+        app_label = "keyword_search_positions"
+        ordering = ("-creation_date",)
         permissions = (
-            ['backend_list_keyword_searches',
-             'Can see keyword searches in the backend'],
+            [
+                "backend_list_keyword_searches",
+                "Can see keyword searches in the backend",
+            ],
         )
