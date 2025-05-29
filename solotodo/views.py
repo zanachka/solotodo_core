@@ -1331,13 +1331,13 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
         return JsonResponse(serializer.data)
 
     @action(detail=True, methods=["post"])
-    def ai_associate(self, request, pk):
+    def ai_associate(self, request, *args, **kwargs):
         entity = self.get_object()
         if not entity.user_has_staff_perms(request.user):
             raise PermissionDenied
 
         try:
-            result = entity.ai_associate()
+            result = entity.ai_associate(user=request.user)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1369,7 +1369,7 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
         return JsonResponse(result)
 
     @action(detail=True, methods=["post"])
-    def ai_create_product(self, request, pk):
+    def ai_create_product(self, request, *args, **kwargs):
         entity = self.get_object()
         if not entity.user_has_staff_perms(request.user):
             raise PermissionDenied
@@ -1380,7 +1380,7 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
 
         try:
             product = entity.ai_create_product(
-                ignore_errors=form.cleaned_data["ignore_errors"]
+                ignore_errors=form.cleaned_data["ignore_errors"], creator=request.user
             )
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

@@ -909,7 +909,9 @@ class Entity(models.Model):
 
         return response, errors
 
-    def ai_create_product(self, inferred_product_data=None, ignore_errors=False):
+    def ai_create_product(
+        self, inferred_product_data=None, ignore_errors=False, creator=None
+    ):
         if not inferred_product_data:
             inferred_product_data, errors = self.ai_infer_product_data()
             if errors and not ignore_errors:
@@ -945,8 +947,11 @@ class Entity(models.Model):
                 setattr(instance, field_name, field_instance)
 
         instance.picture = self.get_instance_model_picture()
+
+        if not creator:
+            creator = SoloTodoUser.get_bot()
         try:
-            instance.save(creator_id=SoloTodoUser.get_bot().pk)
+            instance.save(creator_id=creator.pk)
         except Exception as e:
             # Instance saving may fail if the ignore_errors flags is True but one of the fields with errors is used
             # to calculate important params of the associated product (its brand, for example)
@@ -1069,13 +1074,13 @@ class Entity(models.Model):
 
         return result
 
-    def ai_associate(self):
-        result = self._ai_associate()
+    def ai_associate(self, user=None):
+        result = self._ai_associate(user=user)
         self.ai_association_result = result
         self.save()
         return result
 
-    def _ai_associate(self):
+    def _ai_associate(self, user=None):
         if not self.is_visible:
             raise Exception("Entity has been marked as non-relevant")
 
@@ -1125,7 +1130,7 @@ class Entity(models.Model):
             result["associated_product_id"] = ai_similar_products_data[0]["product"].id
             result["product_created"] = False
         else:
-            product = self.ai_create_product(inferred_product_data)
+            product = self.ai_create_product(inferred_product_data, creator=user)
             self.associate(SoloTodoUser.get_bot(), product)
             result["associated_product_id"] = product.id
             result["product_created"] = True
