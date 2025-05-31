@@ -269,7 +269,7 @@ class Entity(models.Model):
     url = models.URLField(max_length=512, db_index=True)
     discovery_url = models.URLField(max_length=512, db_index=True)
     picture_urls = models.TextField(blank=True, null=True)
-    description = models.TextField(null=True, db_index=True)
+    description = models.TextField(null=True)
     video_urls = models.TextField(blank=True, null=True)
     flixmedia_id = models.CharField(max_length=256, blank=True, null=True)
     review_count = models.IntegerField(blank=True, null=True)

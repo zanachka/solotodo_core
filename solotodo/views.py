@@ -10,7 +10,7 @@ from django.core.files.base import ContentFile
 from django.core.mail import send_mail
 from django.db import models, IntegrityError
 from django.db.models import Avg, Count, Min, Max
-from django.http import Http404, JsonResponse
+from django.http import Http404, JsonResponse, HttpResponseRedirect
 from django.utils import timezone
 from django_filters import rest_framework
 from elasticsearch_dsl import Search
@@ -28,6 +28,7 @@ from rest_framework.response import Response
 from rest_framework.reverse import reverse
 from rest_framework_tracking.mixins import LoggingMixin
 from sorl.thumbnail import get_thumbnail
+from upstash_redis import Redis
 
 from navigation.models import NavDepartment
 from navigation.serializers import NavDepartmentSerializer
@@ -1387,6 +1388,16 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
 
         serializer = EntityAiNestedProductSerializer(product)
         return JsonResponse(serializer.data)
+
+    @action(detail=False)
+    def meli_redirect(self, request):
+        url = request.query_params.get("url", "")
+        redis = Redis(
+            url=settings.UPSTASH_REDIS_REST_URL, token=settings.UPSTASH_REDIS_REST_TOKEN
+        )
+        comission_url = redis.get(url)
+        final_url = comission_url or url
+        return HttpResponseRedirect(final_url)
 
 
 class EntityHistoryViewSet(viewsets.ReadOnlyModelViewSet):
