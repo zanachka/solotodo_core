@@ -124,8 +124,20 @@ class AIProductsBrowseForm(forms.Form):
         )
 
         prompt = f"""
-        Basado en la búsqueda recibida, retorna una lista JSON con los product_id de los productos que puedan ser de interés.
-        Limítate a devolver solo la lista, no añadas comentarios.
+        You are a product search assistant. 
+        Based on the provided product information, answer the user's query about products they might be looking for.
+        
+        USER QUERY: {query}
+
+        From the USER QUERY, extract the required specifications and features, those are the QUERY REQUIREMENTS.
+
+        Then follow this steps to provide a list of product_ids:
+        1. Compare the products information against the QUERY REQUIREMENTS
+        2. Only include products that match ALL requirements EXACTLY
+        3. Exclude a product if you have any doubt, it must match each requirement EXACTLY
+        
+        Finally, return a python dict with "query_requirements" and "product_ids" keys.
+        It will be parsed, so don't add any comment or text.
         """
 
         retriever = settings.VECTOR_STORE_2.as_retriever(
@@ -136,10 +148,8 @@ class AIProductsBrowseForm(forms.Form):
             retriever,
             combine_docs_chain,
         )
-        response = retrieval_chain.invoke({"input": f"{prompt} \n {query}"})
-        answer = json.loads(response["answer"])
-        print(retriever.__dict__)
-        print(len(answer))
+        response = retrieval_chain.invoke({"input": prompt})
+        answer = json.loads(response["answer"])["product_ids"]
 
         return answer
 
