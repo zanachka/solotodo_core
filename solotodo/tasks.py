@@ -309,7 +309,7 @@ def store_update_individual_section_positions(
                 raise self.retry(exc=e, countdown=10, max_retries=limit)
         except RetryLimitExceeded:
             update_log_error(update_log, logger, e)
-    except Exception:
+    except Exception as e:
         update_log_error(update_log, logger, e)
 
 
