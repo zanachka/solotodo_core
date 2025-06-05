@@ -22,8 +22,6 @@ from solotodo.models import (
 )
 from storescraper.store import StoreScrapError
 
-from django.core.cache import cache
-
 
 @shared_task(queue="general", ignore_result=True)
 def product_save(product_id):
