@@ -175,29 +175,32 @@ def store_category_update_pricing(
                 extra_args,
             )
     except ConcurrencyLimitReached as e:
-        concurrency_retry_count = getattr(self.request, "concurrency_retry_count", 0)
-        if concurrency_retry_count > 100:
+        cache_key = f"store_category_update_pricing:ConcurrencyLimitReached:{update_log.id}:{category.storescraper_name}"
+        limit = 300
+
+        try:
+            with memcached_retry_tracker(cache_key, limit):
+                raise self.retry(exc=e, countdown=3, max_retries=limit)
+        except RetryLimitExceeded:
             raise
-        else:
-            self.request.concurrency_retry_count = concurrency_retry_count + 1
-            delay = 3
-            raise self.retry(exc=e, countdown=delay, max_retries=300)
     except StoreScrapError as e:
-        store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
         payload = {
             "message": f"Error: {e}",
             "update_log_id": update_log.id,
         }
-        if store_scrap_error_count > 5:
+        cache_key = f"store_category_update_pricing:StoreScrapError:{update_log.id}:{category.storescraper_name}"
+        limit = 5
+
+        try:
+            with memcached_retry_tracker(cache_key, limit):
+                update_log.decrement_task_counter()
+                logger.warning(json.dumps(payload))
+                raise self.retry(exc=e, countdown=10, max_retries=limit)
+        except RetryLimitExceeded:
             update_log.status = update_log.ERROR
             update_log.save()
             logger.error(json.dumps(payload))
             raise
-        else:
-            update_log.decrement_task_counter()
-            logger.warning(json.dumps(payload))
-            self.request.store_scrap_error_count = store_scrap_error_count + 1
-            raise self.retry(exc=e, countdown=10, max_retries=5)
     except Exception as e:
         update_log.status = update_log.ERROR
         update_log.save()
@@ -306,16 +309,25 @@ def store_update_individual_section_positions(
                 extra_args,
             )
     except ConcurrencyLimitReached as e:
-        concurrency_retry_count = getattr(self.request, "concurrency_retry_count", 0)
-        if concurrency_retry_count > 100:
+        cache_key = f"store_update_individual_section_positions:ConcurrencyLimitReached:{update_log.id}"
+        limit = 300
+
+        try:
+            with memcached_retry_tracker(cache_key, limit):
+                raise self.retry(exc=e, countdown=3, max_retries=limit)
+        except RetryLimitExceeded:
             raise
-        else:
-            self.request.concurrency_retry_count = concurrency_retry_count + 1
-            delay = 3
-            raise self.retry(exc=e, countdown=delay, max_retries=300)
     except StoreScrapError as e:
-        store_scrap_error_count = getattr(self.request, "store_scrap_error_count", 0)
-        if store_scrap_error_count > 5:
+        cache_key = (
+            f"store_update_individual_section_positions:StoreScrapError:{update_log.id}"
+        )
+        limit = 5
+
+        try:
+            with memcached_retry_tracker(cache_key, limit):
+                update_log.decrement_task_counter()
+                raise self.retry(exc=e, countdown=10, max_retries=limit)
+        except RetryLimitExceeded:
             update_log.status = update_log.ERROR
             update_log.save()
             payload = {
@@ -324,10 +336,6 @@ def store_update_individual_section_positions(
             }
             logger.error(json.dumps(payload))
             raise
-        else:
-            update_log.decrement_task_counter()
-            self.request.store_scrap_error_count = store_scrap_error_count + 1
-            raise self.retry(exc=e, countdown=10, max_retries=5)
     except Exception:
         update_log.status = update_log.ERROR
         update_log.save()
