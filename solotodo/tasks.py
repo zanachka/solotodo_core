@@ -182,7 +182,7 @@ def store_category_update_pricing(
             with memcached_retry_tracker(cache_key, limit):
                 raise self.retry(exc=e, countdown=3, max_retries=limit)
         except RetryLimitExceeded:
-            raise
+            update_log_error(update_log, logger, e)
     except StoreScrapError as e:
         payload = {
             "message": f"Error: {e}",
@@ -197,19 +197,9 @@ def store_category_update_pricing(
                 logger.warning(json.dumps(payload))
                 raise self.retry(exc=e, countdown=10, max_retries=limit)
         except RetryLimitExceeded:
-            update_log.status = update_log.ERROR
-            update_log.save()
-            logger.error(json.dumps(payload))
-            raise
+            update_log_error(update_log, logger, e)
     except Exception as e:
-        update_log.status = update_log.ERROR
-        update_log.save()
-        payload = {
-            "message": f"Error: {e}",
-            "update_log_id": update_log.id,
-        }
-        logger.error(json.dumps(payload))
-        raise
+        update_log_error(update_log, logger, e)
 
 
 @shared_task(
@@ -229,6 +219,7 @@ def store_create_or_update_entity_from_discovery_url(
     print(f"Create or update entity retry # {self.request.retries}")
     update_log = StoreUpdateLog.objects.get(pk=update_log_id)
     logger = logging.getLogger("logstash")
+
     try:
         with memcached_site_limit(
             f"{store_id}_products_for_url",
@@ -247,7 +238,7 @@ def store_create_or_update_entity_from_discovery_url(
             with memcached_retry_tracker(cache_key, limit):
                 raise self.retry(exc=e, countdown=3, max_retries=limit)
         except RetryLimitExceeded:
-            raise
+            update_log_error(update_log, logger, e)
     except StoreScrapError as e:
         payload = {
             "message": f"Error: {e}",
@@ -262,19 +253,9 @@ def store_create_or_update_entity_from_discovery_url(
                 logger.warning(json.dumps(payload))
                 raise self.retry(exc=e, countdown=10, max_retries=limit)
         except RetryLimitExceeded:
-            update_log.status = update_log.ERROR
-            update_log.save()
-            logger.error(json.dumps(payload))
-            raise
+            update_log_error(update_log, logger, e)
     except Exception as e:
-        update_log.status = update_log.ERROR
-        update_log.save()
-        payload = {
-            "message": f"Error: {e}",
-            "update_log_id": update_log.id,
-        }
-        logger.error(json.dumps(payload))
-        raise
+        update_log_error(update_log, logger, e)
 
 
 @shared_task(
@@ -291,7 +272,6 @@ def store_update_individual_section_positions(
     extra_args,
 ):
     print(f"Section {section} Update Pricing retry # {self.request.retries}")
-
     update_log = StoreSectionPositionsUpdateLog.objects.get(
         pk=section_positions_update_log_id
     )
@@ -316,7 +296,7 @@ def store_update_individual_section_positions(
             with memcached_retry_tracker(cache_key, limit):
                 raise self.retry(exc=e, countdown=3, max_retries=limit)
         except RetryLimitExceeded:
-            raise
+            update_log_error(update_log, logger, e)
     except StoreScrapError as e:
         cache_key = (
             f"store_update_individual_section_positions:StoreScrapError:{update_log.id}"
@@ -328,20 +308,17 @@ def store_update_individual_section_positions(
                 update_log.decrement_task_counter()
                 raise self.retry(exc=e, countdown=10, max_retries=limit)
         except RetryLimitExceeded:
-            update_log.status = update_log.ERROR
-            update_log.save()
-            payload = {
-                "message": f"Error: {e}",
-                "section_positions_update_log_id": update_log.id,
-            }
-            logger.error(json.dumps(payload))
-            raise
+            update_log_error(update_log, logger, e)
     except Exception:
-        update_log.status = update_log.ERROR
-        update_log.save()
-        payload = {
-            "message": f"Error: {traceback.format_exc()}",
-            "section_positions_update_log_id": update_log.id,
-        }
-        logger.error(json.dumps(payload))
-        raise
+        update_log_error(update_log, logger, e)
+
+
+def update_log_error(update_log, logger, e):
+    update_log.status = update_log.ERROR
+    update_log.save()
+    payload = {
+        "message": f"Error: {e}",
+        "update_log_id": update_log.id,
+    }
+    logger.error(json.dumps(payload))
+    raise
