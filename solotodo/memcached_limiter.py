@@ -42,8 +42,4 @@ def memcached_retry_tracker(key, limit=5, expire=60 * 60):
         raise RetryLimitExceeded(f"Retry limit exceeded for key: {key}")
 
     cache.incr(key, 1)
-
-    try:
-        yield
-    finally:
-        pass
+    yield
