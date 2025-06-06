@@ -292,7 +292,7 @@ def store_update_individual_section_positions(
                 extra_args,
             )
     except ConcurrencyLimitReached as e:
-        cache_key = f"store_update_individual_section_positions:ConcurrencyLimitReached:{update_log.id}"
+        cache_key = f"store_update_individual_section_positions:ConcurrencyLimitReached:{update_log.id}:{hash(section)}"
         limit = 500
 
         try:
