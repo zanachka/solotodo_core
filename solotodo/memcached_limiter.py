@@ -7,7 +7,7 @@ class ConcurrencyLimitReached(Exception):
 
 
 @contextmanager
-def memcached_site_limit(key, limit=10, expire=60 * 60):
+def memcached_site_limit(key, limit=10, expire=2 * 60 * 60):
     acquired = False
     # print("Acquiring lock")
 

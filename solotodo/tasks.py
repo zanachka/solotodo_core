@@ -229,7 +229,7 @@ def store_create_or_update_entity_from_discovery_url(
                 update_log, discovery_url, category, extra_args
             )
     except ConcurrencyLimitReached as e:
-        cache_key = f"store_create_or_update_entity_from_discovery_url:ConcurrencyLimitReached:{update_log_id}:{discovery_url}"
+        cache_key = f"store_create_or_update_entity_from_discovery_url:ConcurrencyLimitReached:{update_log_id}:{hash(discovery_url)}"
         limit = 300
 
         try:
@@ -242,7 +242,7 @@ def store_create_or_update_entity_from_discovery_url(
             "message": f"Error: {e}",
             "update_log_id": update_log.id,
         }
-        cache_key = f"store_create_or_update_entity_from_discovery_url:StoreScrapError:{update_log_id}:{discovery_url}"
+        cache_key = f"store_create_or_update_entity_from_discovery_url:StoreScrapError:{update_log_id}:{hash(discovery_url)}"
         limit = 5
 
         try:
