@@ -1,5 +1,6 @@
 import json
 import logging
+import traceback
 
 from django.db import models
 from django.core.cache import cache
@@ -88,6 +89,15 @@ class StoreUpdateLog(models.Model):
                     f"{self._caching_key()}_discovery_urls_without_products_count"
                 )
                 self.save()
+
+    def save_with_error(self, logger):
+        self.status = self.ERROR
+        self.save()
+        payload = {
+            "message": f"Error: {traceback.format_exc()}",
+            "update_log_id": self.id,
+        }
+        logger.error(json.dumps(payload))
 
     def _caching_key(self):
         return f"UPDATE_LOG_{self.id}"

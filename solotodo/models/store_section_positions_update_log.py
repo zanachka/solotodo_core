@@ -1,5 +1,6 @@
 import json
 import logging
+import traceback
 
 from django.db import models
 from django.core.cache import cache
@@ -50,6 +51,15 @@ class StoreSectionPositionsUpdateLog(models.Model):
             if self.status == StoreSectionPositionsUpdateLog.IN_PROCESS:
                 self.status = StoreSectionPositionsUpdateLog.SUCCESS
                 self.save()
+
+    def save_with_error(self, logger):
+        self.status = self.ERROR
+        self.save()
+        payload = {
+            "message": f"Error: {traceback.format_exc()}",
+            "section_positions_update_log_id": self.id,
+        }
+        logger.error(json.dumps(payload))
 
     def _caching_key(self):
         return f"SECTION_POSITION_LOG_{self.id}"

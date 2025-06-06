@@ -1,6 +1,5 @@
 import json
 import logging
-import traceback
 
 from celery import shared_task
 from django.core.mail import EmailMessage
@@ -180,7 +179,8 @@ def store_category_update_pricing(
             with memcached_retry_tracker(cache_key, limit):
                 raise self.retry(exc=e, countdown=3, max_retries=limit)
         except RetryLimitExceeded:
-            update_log_error(update_log, logger, e)
+            update_log.save_with_error(logger)
+            raise
     except StoreScrapError as e:
         payload = {
             "message": f"Error: {e}",
@@ -195,9 +195,11 @@ def store_category_update_pricing(
                 logger.warning(json.dumps(payload))
                 raise self.retry(exc=e, countdown=10, max_retries=limit)
         except RetryLimitExceeded:
-            update_log_error(update_log, logger, e)
+            update_log.save_with_error(logger)
+            raise
     except Exception as e:
-        update_log_error(update_log, logger, e)
+        update_log.save_with_error(logger)
+        raise
 
 
 @shared_task(
@@ -236,7 +238,8 @@ def store_create_or_update_entity_from_discovery_url(
             with memcached_retry_tracker(cache_key, limit):
                 raise self.retry(exc=e, countdown=3, max_retries=limit)
         except RetryLimitExceeded:
-            update_log_error(update_log, logger, e)
+            update_log.save_with_error(logger)
+            raise
     except StoreScrapError as e:
         payload = {
             "message": f"Error: {e}",
@@ -251,9 +254,11 @@ def store_create_or_update_entity_from_discovery_url(
                 logger.warning(json.dumps(payload))
                 raise self.retry(exc=e, countdown=10, max_retries=limit)
         except RetryLimitExceeded:
-            update_log_error(update_log, logger, e)
+            update_log.save_with_error(logger)
+            raise
     except Exception as e:
-        update_log_error(update_log, logger, e)
+        update_log.save_with_error(logger)
+        raise
 
 
 @shared_task(
@@ -287,18 +292,17 @@ def store_update_individual_section_positions(
                 extra_args,
             )
     except ConcurrencyLimitReached as e:
-        cache_key = f"store_update_individual_section_positions:ConcurrencyLimitReached:{update_log.id}"
+        cache_key = f"store_update_individual_section_positions:ConcurrencyLimitReached:{update_log.id}:{hash(section)}"
         limit = 300
 
         try:
             with memcached_retry_tracker(cache_key, limit):
                 raise self.retry(exc=e, countdown=3, max_retries=limit)
         except RetryLimitExceeded:
-            update_log_error(update_log, logger, e)
+            update_log.save_with_error(logger)
+            raise
     except StoreScrapError as e:
-        cache_key = (
-            f"store_update_individual_section_positions:StoreScrapError:{update_log.id}"
-        )
+        cache_key = f"store_update_individual_section_positions:StoreScrapError:{update_log.id}:{hash(section)}"
         limit = 5
 
         try:
@@ -306,17 +310,8 @@ def store_update_individual_section_positions(
                 update_log.decrement_task_counter()
                 raise self.retry(exc=e, countdown=10, max_retries=limit)
         except RetryLimitExceeded:
-            update_log_error(update_log, logger, e)
+            update_log.save_with_error(logger)
+            raise
     except Exception as e:
-        update_log_error(update_log, logger, e)
-
-
-def update_log_error(update_log, logger, e):
-    update_log.status = update_log.ERROR
-    update_log.save()
-    payload = {
-        "message": f"Error: {e}",
-        "update_log_id": update_log.id,
-    }
-    logger.error(json.dumps(payload))
-    raise
+        update_log.save_with_error(logger)
+        raise
