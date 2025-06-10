@@ -113,6 +113,7 @@ from solotodo.models import (
     ProductVideo,
     Bundle,
     StoreSectionPositionsUpdateLog,
+    Subcategory,
 )
 from solotodo.pagination import (
     StoreUpdateLogPagination,
@@ -176,6 +177,7 @@ from solotodo.serializers import (
     EntityAiSimilarProductEntrySerializer,
     EntityAiNestedProductSerializer,
     StoreSectionPositionsUpdateLogSerializer,
+    SubcategorySerializer,
 )
 from solotodo.tasks import send_historic_entity_positions_report_task
 from solotodo.utils import get_client_ip, iterable_to_dict
@@ -1997,3 +1999,8 @@ class ProductVideoViewSet(
 ):
     queryset = ProductVideo.objects.all()
     serializer_class = ProductVideoSerializer
+
+
+class SubcategoryViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Subcategory.objects.all()
+    serializer_class = SubcategorySerializer

@@ -38,6 +38,7 @@ from solotodo.models import (
     Coupon,
     ProductFieldWatcher,
     StoreSectionPositionsUpdateLog,
+    Subcategory,
 )
 
 
@@ -326,3 +327,8 @@ class CouponModelAdmin(admin.ModelAdmin):
 @admin.register(ProductFieldWatcher)
 class ProductFieldWatcherModelAdmin(admin.ModelAdmin):
     list_display = ["category", "name"]
+
+
+@admin.register(Subcategory)
+class SubcategoryModelAdmin(admin.ModelAdmin):
+    list_display = ["name", "category", "slug"]
