@@ -1,7 +1,9 @@
 import json
 
 from collections import OrderedDict
-
+from copy import deepcopy
+from enum import Enum
+from typing import Union
 from django import forms
 from django.conf import settings
 from django.core.files.storage import default_storage
@@ -12,10 +14,11 @@ from langchain.chains.retrieval import create_retrieval_chain
 from langchain_core.prompts import ChatPromptTemplate
 from rest_framework.reverse import reverse
 from elasticsearch_dsl import A, Q
+from pydantic import create_model
 
 from solotodo.filters import CategoryFullBrowseEntityFilterSet
 from solotodo.forms.product_specs_form import ProductSpecsForm
-from solotodo.models import Product, Store, Brand, EsProduct
+from solotodo.models import Product, Store, Brand, EsProduct, Category
 from solotodo.serializers import CategoryFullBrowseResultSerializer
 
 
@@ -109,7 +112,50 @@ class AIProductsBrowseForm(forms.Form):
 
         return price_filter
 
+    def ai_infer_query_requirements(self, query):
+        tagging_prompt = ChatPromptTemplate.from_template(
+            """ 
+        Based on the given QUERY, extract the required specification and features.
+
+        QUERY: {input}
+
+        It will be parsed, so don't add any comment or text.
+        """
+        )
+        categories = list(Category.objects.all().values_list("name", flat=True))
+        enum = Enum("categoryEnum", {choice: choice for choice in categories}, type=str)
+
+        Classification = create_model(
+            "Classification",
+            product_category=(Union[enum, str], "the type of product"),
+            features=(list[str], "the requested specifications and features"),
+        )
+        llm = settings.LLM.with_structured_output(Classification)
+        prompt = tagging_prompt.invoke({"input": query})
+
+        return dict(llm.invoke(prompt))
+
+    def append_category_filter(self, filters, category_name):
+        for filter in filters["bool"]["filter"]:
+            if "has_child" in filter:
+                child = filter["has_child"]
+                query = child["query"]
+
+                if "terms" in query:
+                    base_terms = deepcopy(query["terms"])
+                    child["query"] = {"bool": {"filter": [{"terms": base_terms}]}}
+
+                child["query"]["bool"]["filter"].append(
+                    {"terms": {"category_name": [category_name]}}
+                )
+
+                break
+
+        return filters
+
     def ai_search(self, query, filters):
+        requirements = self.ai_infer_query_requirements(query)
+        filters = self.append_category_filter(filters, requirements["product_category"])
         retrieval_qa_chat_prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -124,20 +170,14 @@ class AIProductsBrowseForm(forms.Form):
         )
 
         prompt = f"""
-        You are a product search assistant. 
-        Based on the provided product information, answer the user's query about products they might be looking for.
-        
-        USER QUERY: {query}
+        Based on the given REQUIREMENTS, return a list of product_ids.
 
-        From the USER QUERY, extract the required specifications and features, those are the QUERY REQUIREMENTS.
+        REQUIREMENTS: {" ".join(requirements["features"])}
 
-        Then follow this steps to provide a list of product_ids:
-        1. Compare the products information against the QUERY REQUIREMENTS
-        2. Only include products that match ALL requirements EXACTLY
-        3. Exclude a product if you have any doubt, it must match each requirement EXACTLY
+        1. Compare the products information against the REQUIREMENTS
+        2. Only include products that match ALL REQUIREMENT
         
-        Finally, return a python dict with "query_requirements" and "product_ids" keys.
-        It will be parsed, so don't add any comment or text.
+        The return list will be parsed, so don't add any comment or text.
         """
 
         retriever = settings.VECTOR_STORE_2.as_retriever(
@@ -149,9 +189,8 @@ class AIProductsBrowseForm(forms.Form):
             combine_docs_chain,
         )
         response = retrieval_chain.invoke({"input": prompt})
-        answer = json.loads(response["answer"])["product_ids"]
 
-        return answer
+        return json.loads(response["answer"])
 
     def get_category_products(self, request, category=None):
         from solotodo.models import EsProduct, EsEntity
