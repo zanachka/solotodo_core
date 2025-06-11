@@ -25,21 +25,6 @@ def additional_es_fields(elastic_search_original, model_name):
         ).strip()
         result["brand_unicode"] = elastic_search_original["line_brand_unicode"]
 
-        if elastic_search_original["display_unicode"] == "OLED":
-            lg_cac_segment = "OLED"
-        elif elastic_search_original["display_unicode"] == "NanoCell":
-            lg_cac_segment = "NanoCell"
-        elif elastic_search_original["size_family_value"] >= 70:
-            lg_cac_segment = "Ultra Large TV"
-        elif elastic_search_original["resolution_id"] == 281518:
-            lg_cac_segment = "UHD"
-        elif elastic_search_original["resolution_id"] == 281535:
-            lg_cac_segment = "Full HD"
-        else:
-            lg_cac_segment = "LED"
-
-        result["lg_cac_segment"] = lg_cac_segment
-
         tags = []
         if elastic_search_original["display_unicode"] != "LED":
             tags.append(elastic_search_original["display_unicode"])
@@ -93,21 +78,6 @@ def additional_es_fields(elastic_search_original, model_name):
         result["total_capacity"] = total_capacity
         result["pretty_total_capacity"] = format_optional_field(total_capacity, "L.")
 
-        total_capacity_ranges = [
-            ("600 L. o más", 600),
-            ("350 a 599 L.", 350),
-            ("300 a 349 L.", 300),
-            ("299 L. o menos", 0),
-        ]
-
-        lg_cl_total_capacity_segment = None
-
-        for label, threshold in total_capacity_ranges:
-            if total_capacity >= threshold:
-                lg_cl_total_capacity_segment = label
-                break
-
-        result["lg_cl_total_capacity_segment"] = lg_cl_total_capacity_segment
         consumption = elastic_search_original["consumption"]
         result["pretty_consumption"] = format_optional_field(consumption, "kWh/mes")
         if consumption > 0:
@@ -164,31 +134,6 @@ def additional_es_fields(elastic_search_original, model_name):
             result["pretty_weight"] = "{} kg.".format(0.001 * weight)
         else:
             result["pretty_weight"] = "Desconocido"
-
-        lg_cl_capacity = (
-            elastic_search_original["capacity_value"]
-            or elastic_search_original["drying_capacity_value"]
-        )
-
-        total_capacity_ranges = [
-            ("20 kg. o más", 20000),
-            ("16 a 19.9 kg.", 16000),
-            ("10 a 15.9 kg.", 10000),
-            ("9.9 kg. o menos", 0),
-        ]
-
-        lg_cl_capacity_segment = None
-
-        for label, threshold in total_capacity_ranges:
-            if lg_cl_capacity >= threshold:
-                lg_cl_capacity_segment = label
-                break
-
-        result["lg_cl_capacity"] = lg_cl_capacity
-        result["pretty_lg_cl_capacity"] = format_optional_field(
-            round(lg_cl_capacity / 1000), "kg."
-        )
-        result["lg_cl_capacity_segment"] = lg_cl_capacity_segment
 
         return result
     if m == "AirConditioner":

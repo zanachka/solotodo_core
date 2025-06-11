@@ -1,70 +1,25 @@
+import json
+import logging
+
 from celery import shared_task
 from django.core.mail import EmailMessage
 from django.http import QueryDict
 
-from solotodo.models import Store, Category, StoreUpdateLog, Product, Entity
-
-
-@shared_task(
-    queue="store_update",
-    ignore_result=True,
-    autoretry_for=(Exception,),
-    max_retries=2,
-    default_retry_delay=10,
+from solotodo.memcached_limiter import (
+    ConcurrencyLimitReached,
+    memcached_site_limit,
+    RetryLimitExceeded,
+    memcached_retry_tracker,
 )
-def store_update(
-    store_id,
-    category_ids=None,
-    discover_urls_concurrency=None,
-    products_for_url_concurrency=None,
-    use_async=None,
-    update_log_id=None,
-    extra_args=None,
-):
-    store = Store.objects.get(pk=store_id)
-
-    if category_ids:
-        categories = Category.objects.filter(pk__in=category_ids)
-    else:
-        categories = None
-
-    categories = store.sanitize_categories_for_update(categories)
-
-    sanitized_parameters = store.scraper.sanitize_parameters(
-        discover_urls_concurrency=discover_urls_concurrency,
-        products_for_url_concurrency=products_for_url_concurrency,
-        use_async=use_async,
-    )
-
-    discover_urls_concurrency = sanitized_parameters["discover_urls_concurrency"]
-    products_for_url_concurrency = sanitized_parameters["products_for_url_concurrency"]
-    use_async = sanitized_parameters["use_async"]
-
-    if update_log_id:
-        update_log = StoreUpdateLog.objects.get(pk=update_log_id)
-    else:
-        update_log = StoreUpdateLog.objects.create(store=store)
-
-    update_log.discovery_url_concurrency = discover_urls_concurrency
-    update_log.products_for_url_concurrency = products_for_url_concurrency
-    update_log.use_async = use_async
-    update_log.save()
-
-    update_log.categories.set(categories)
-
-    # Reset the categories to synchronize the task signature with the
-    # actual method implementation
-    if category_ids is None:
-        categories = None
-
-    store.update_pricing(
-        categories=categories,
-        discover_urls_concurrency=discover_urls_concurrency,
-        products_for_url_concurrency=products_for_url_concurrency,
-        use_async=use_async,
-        update_log=update_log,
-        extra_args=extra_args,
-    )
+from solotodo.models import (
+    Store,
+    Category,
+    StoreUpdateLog,
+    Product,
+    Entity,
+    StoreSectionPositionsUpdateLog,
+)
+from storescraper.store import StoreScrapError
 
 
 @shared_task(queue="general", ignore_result=True)
@@ -184,12 +139,185 @@ def ai_entity_update_category(entity_id):
 
 
 @shared_task(
-    queue="ai",
+    bind=True,
+    queue="storescraper",
     ignore_result=True,
-    autoretry_for=(Exception,),
-    max_retries=2,
-    default_retry_delay=10,
 )
+def store_category_update_pricing(
+    self,
+    store_id,
+    category_id,
+    discover_urls_concurrency,
+    products_for_url_concurrency,
+    use_async,
+    update_log_id,
+    extra_args,
+):
+    category = Category.objects.get(pk=category_id)
+    logger = logging.getLogger("logstash")
+    update_log = StoreUpdateLog.objects.get(pk=update_log_id)
+    print(f"Category {category} Update Pricing retry # {self.request.retries}")
+
+    try:
+        with memcached_site_limit(
+            f"{store_id}_discover_entries",
+            limit=discover_urls_concurrency,
+        ):
+            store = Store.objects.get(pk=store_id)
+            store.update_pricing_category(
+                category,
+                products_for_url_concurrency,
+                use_async,
+                update_log,
+                extra_args,
+            )
+    except ConcurrencyLimitReached as e:
+        cache_key = f"store_category_update_pricing:ConcurrencyLimitReached:{update_log.id}:{category.storescraper_name}"
+        limit = 300
+
+        try:
+            with memcached_retry_tracker(cache_key, limit):
+                raise self.retry(exc=e, countdown=3, max_retries=limit)
+        except RetryLimitExceeded:
+            update_log.save_with_error(logger)
+            raise
+    except StoreScrapError as e:
+        payload = {
+            "message": f"Error: {e}",
+            "update_log_id": update_log.id,
+        }
+        cache_key = f"store_category_update_pricing:StoreScrapError:{update_log.id}:{category.storescraper_name}"
+        limit = 5
+
+        try:
+            with memcached_retry_tracker(cache_key, limit):
+                update_log.decrement_task_counter()
+                logger.warning(json.dumps(payload))
+                raise self.retry(exc=e, countdown=10, max_retries=limit)
+        except RetryLimitExceeded:
+            update_log.save_with_error(logger)
+            raise
+    except Exception as e:
+        update_log.save_with_error(logger)
+        raise
+
+
+@shared_task(
+    bind=True,
+    queue="storescraper",
+    ignore_result=True,
+)
+def store_create_or_update_entity_from_discovery_url(
+    self,
+    store_id,
+    update_log_id,
+    discovery_url,
+    category_id,
+    extra_args,
+    products_for_url_concurrency,
+):
+    print(f"Create or update entity retry # {self.request.retries}")
+    update_log = StoreUpdateLog.objects.get(pk=update_log_id)
+    logger = logging.getLogger("logstash")
+
+    try:
+        with memcached_site_limit(
+            f"{store_id}_products_for_url",
+            limit=products_for_url_concurrency,
+        ):
+            store = Store.objects.get(pk=store_id)
+            category = Category.objects.get(pk=category_id)
+            store.create_or_update_entity_from_discovery_url(
+                update_log, discovery_url, category, extra_args
+            )
+    except ConcurrencyLimitReached as e:
+        cache_key = f"store_create_or_update_entity_from_discovery_url:ConcurrencyLimitReached:{update_log_id}:{hash(discovery_url)}"
+        limit = 300
+
+        try:
+            with memcached_retry_tracker(cache_key, limit):
+                raise self.retry(exc=e, countdown=3, max_retries=limit)
+        except RetryLimitExceeded:
+            update_log.save_with_error(logger)
+            raise
+    except StoreScrapError as e:
+        payload = {
+            "message": f"Error: {e}",
+            "update_log_id": update_log.id,
+        }
+        cache_key = f"store_create_or_update_entity_from_discovery_url:StoreScrapError:{update_log_id}:{hash(discovery_url)}"
+        limit = 5
+
+        try:
+            with memcached_retry_tracker(cache_key, limit):
+                update_log.decrement_task_counter()
+                logger.warning(json.dumps(payload))
+                raise self.retry(exc=e, countdown=10, max_retries=limit)
+        except RetryLimitExceeded:
+            update_log.save_with_error(logger)
+            raise
+    except Exception as e:
+        update_log.save_with_error(logger)
+        raise
+
+
+@shared_task(
+    bind=True,
+    queue="storescraper",
+    ignore_result=True,
+)
+def store_update_individual_section_positions(
+    self,
+    store_id,
+    section,
+    concurrency,
+    section_positions_update_log_id,
+    extra_args,
+):
+    print(f"Section {section} Update Pricing retry # {self.request.retries}")
+    update_log = StoreSectionPositionsUpdateLog.objects.get(
+        pk=section_positions_update_log_id
+    )
+    logger = logging.getLogger("logstash")
+
+    try:
+        with memcached_site_limit(
+            f"{store_id}_section_positions",
+            limit=concurrency,
+        ):
+            store = Store.objects.get(pk=store_id)
+            store.update_individual_section_positions(
+                section,
+                update_log,
+                extra_args,
+            )
+    except ConcurrencyLimitReached as e:
+        cache_key = f"store_update_individual_section_positions:ConcurrencyLimitReached:{update_log.id}:{hash(section)}"
+        limit = 500
+
+        try:
+            with memcached_retry_tracker(cache_key, limit):
+                raise self.retry(exc=e, countdown=3, max_retries=limit)
+        except RetryLimitExceeded:
+            update_log.save_with_error(logger)
+            raise
+    except StoreScrapError as e:
+        cache_key = f"store_update_individual_section_positions:StoreScrapError:{update_log.id}:{hash(section)}"
+        limit = 5
+
+        try:
+            with memcached_retry_tracker(cache_key, limit):
+                update_log.decrement_task_counter()
+                raise self.retry(exc=e, countdown=10, max_retries=limit)
+        except RetryLimitExceeded:
+            update_log.save_with_error(logger)
+            raise
+    except Exception as e:
+        update_log.save_with_error(logger)
+        raise
+
+
+@shared_task(queue="ai", ignore_result=True)
 def ai_generate_product_descriptions(product_id):
     product = Product.objects.get(pk=product_id)
     product.update_ai_description()

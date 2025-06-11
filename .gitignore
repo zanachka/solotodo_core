@@ -13,3 +13,4 @@ elasticsearch-ca.pem
 *.csv
 .ipynb_checkpoints/
 *.ipynb
+logstash.db

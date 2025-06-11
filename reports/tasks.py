@@ -29,17 +29,7 @@ def send_current_prices_task(user_ids, query_string):
         assert form.is_valid()
 
         category = form.cleaned_data["category"]
-
-        if category:
-            spec_form_class = category.specs_form()
-            spec_form = spec_form_class(q_dict)
-
-            assert spec_form.is_valid()
-            es_products_search = EsProduct.category_search(category)
-            es_products_search = spec_form.get_es_products(es_products_search)
-        else:
-            es_products_search = None
-        report_data = form.generate_report(es_products_search)
+        report_data = form.generate_report()
 
         report_filename = "{}.xlsx".format(report_data["filename"])
         report_file = report_data["file"]

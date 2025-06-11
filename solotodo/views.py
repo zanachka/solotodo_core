@@ -10,11 +10,11 @@ from django.core.files.base import ContentFile
 from django.core.mail import send_mail
 from django.db import models, IntegrityError
 from django.db.models import Avg, Count, Min, Max
-from django.http import Http404, JsonResponse
+from django.http import Http404, JsonResponse, HttpResponseRedirect
 from django.utils import timezone
 from django_filters import rest_framework
+from elasticsearch_dsl import Search
 from geoip2.errors import AddressNotFoundError
-from googleapiclient.http import HttpRequest
 from guardian.utils import get_anonymous_user
 from rest_framework import viewsets, permissions, status, mixins
 from rest_framework.decorators import action
@@ -28,6 +28,7 @@ from rest_framework.response import Response
 from rest_framework.reverse import reverse
 from rest_framework_tracking.mixins import LoggingMixin
 from sorl.thumbnail import get_thumbnail
+from upstash_redis import Redis
 
 from navigation.models import NavDepartment
 from navigation.serializers import NavDepartmentSerializer
@@ -53,6 +54,7 @@ from solotodo.filters import (
     ProductPictureFilterSet,
     EntitySectionPositionFilterSet,
     StoreSectionFilterSet,
+    StoreSectionPositionsUpdateLogFilterSet,
 )
 from solotodo.forms.date_range_form import DateRangeForm
 from solotodo.forms.entity_association_form import EntityAssociationForm
@@ -111,6 +113,7 @@ from solotodo.models import (
     EsProduct,
     ProductVideo,
     Bundle,
+    StoreSectionPositionsUpdateLog,
 )
 from solotodo.pagination import (
     StoreUpdateLogPagination,
@@ -124,6 +127,7 @@ from solotodo.pagination import (
     RatingPagination,
     ProductPicturePagination,
     EntitySectionPositionPagination,
+    StoreSectionPositionsUpdateLogPagination,
 )
 from solotodo.permissions import RatingPermission
 from solotodo.serializers import (
@@ -172,8 +176,9 @@ from solotodo.serializers import (
     EntityAiAssociationResultSerializer,
     EntityAiSimilarProductEntrySerializer,
     EntityAiNestedProductSerializer,
+    StoreSectionPositionsUpdateLogSerializer,
 )
-from solotodo.tasks import store_update, send_historic_entity_positions_report_task
+from solotodo.tasks import send_historic_entity_positions_report_task
 from solotodo.utils import get_client_ip, iterable_to_dict
 from solotodo_core.s3utils import MediaRootS3Boto3Storage
 
@@ -665,42 +670,19 @@ class StoreViewSet(PermissionReadOnlyModelViewSet):
         if form.is_valid():
             cleaned_data = form.cleaned_data
 
-            categories = cleaned_data["categories"]
-            if categories:
-                # The request specifies the categories to update
-                category_ids = [category.id for category in categories]
-            elif (
-                form.default_categories().count() == store.scraper_categories().count()
-            ):
-                # The request does not specify the categories, and the user
-                # has permissions over all of the categories available to the
-                # scraper. Setting category_ids to None tells the updating
-                # process to also update the store entities whose type is not
-                # in the scraper official list (e.g. "power supplies" in Paris
-                # gaming section).
-                category_ids = None
-            else:
-                # The request does not specify the categories, and the user
-                # only has permission over a subset of the available categories
-                # Use the categories with permissions.
-                category_ids = [category.id for category in form.default_categories()]
-
+            categories = cleaned_data["categories"] or form.default_categories()
             discover_urls_concurrency = cleaned_data["discover_urls_concurrency"]
             products_for_url_concurrency = cleaned_data["products_for_url_concurrency"]
             use_async = cleaned_data["prefer_async"]
 
-            store_update_log = StoreUpdateLog.objects.create(store=store)
-
-            task = store_update.delay(
-                store.id,
-                category_ids=category_ids,
+            store_update_log = store.update_pricing(
+                categories=categories,
                 discover_urls_concurrency=discover_urls_concurrency,
                 products_for_url_concurrency=products_for_url_concurrency,
                 use_async=use_async,
-                update_log_id=store_update_log.id,
             )
 
-            return Response({"task_id": task.id, "log_id": store_update_log.id})
+            return Response({"log_id": store_update_log.id})
         else:
             return Response(form.errors)
 
@@ -751,6 +733,80 @@ class StoreUpdateLogViewSet(viewsets.ReadOnlyModelViewSet):
             result[store_url] = store_latest_log
 
         return Response(result)
+
+    @action(detail=True)
+    def registry(self, request, *args, **kwargs):
+        section_positions_update_log = self.get_object()
+        search = (
+            Search(using=settings.ES, index="logs-store_update")
+            .filter("term", update_log_id=section_positions_update_log.id)
+            .sort({"@timestamp": {"order": "desc"}})
+        )
+        registry = []
+        for entry in search.iterate():
+            registry.append(
+                {
+                    "timestamp": entry["@timestamp"],
+                    "level": entry.level,
+                    "message": entry.message,
+                }
+            )
+        return JsonResponse(registry, safe=False)
+
+
+class StoreSectionPositionsUpdateLogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = StoreSectionPositionsUpdateLog.objects.all()
+    serializer_class = StoreSectionPositionsUpdateLogSerializer
+    pagination_class = StoreSectionPositionsUpdateLogPagination
+    filter_backends = (rest_framework.DjangoFilterBackend, OrderingFilter)
+    filterset_class = StoreSectionPositionsUpdateLogFilterSet
+    ordering_fields = ("last_updated",)
+
+    @action(detail=False)
+    def latest(self, request, *args, **kwargs):
+        stores = create_store_filter("view_store_update_logs")(
+            self.request
+        ).filter_by_section_positions_support()
+
+        result = {}
+
+        for store in stores:
+            store_url = reverse(
+                "store-detail", kwargs={"pk": store.pk}, request=request
+            )
+            store_latest_log = store.storesectionpositionsupdatelog_set.order_by("-pk")[
+                :1
+            ]
+
+            if store_latest_log:
+                store_latest_log = StoreSectionPositionsUpdateLogSerializer(
+                    store_latest_log[0], context={"request": request}
+                ).data
+            else:
+                store_latest_log = None
+
+            result[store_url] = store_latest_log
+
+        return JsonResponse(result)
+
+    @action(detail=True)
+    def registry(self, request, *args, **kwargs):
+        update_log = self.get_object()
+        search = (
+            Search(using=settings.ES, index="logs-store_update")
+            .filter("term", section_positions_update_log_id=update_log.id)
+            .sort({"@timestamp": {"order": "desc"}})
+        )
+        registry = []
+        for entry in search.iterate():
+            registry.append(
+                {
+                    "timestamp": entry["@timestamp"],
+                    "level": entry.level,
+                    "message": entry.message,
+                }
+            )
+        return JsonResponse(registry, safe=False)
 
 
 class EntityViewSet(viewsets.ReadOnlyModelViewSet):
@@ -1277,13 +1333,13 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
         return JsonResponse(serializer.data)
 
     @action(detail=True, methods=["post"])
-    def ai_associate(self, request, pk):
+    def ai_associate(self, request, *args, **kwargs):
         entity = self.get_object()
         if not entity.user_has_staff_perms(request.user):
             raise PermissionDenied
 
         try:
-            result = entity.ai_associate()
+            result = entity.ai_associate(user=request.user)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1315,7 +1371,7 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
         return JsonResponse(result)
 
     @action(detail=True, methods=["post"])
-    def ai_create_product(self, request, pk):
+    def ai_create_product(self, request, *args, **kwargs):
         entity = self.get_object()
         if not entity.user_has_staff_perms(request.user):
             raise PermissionDenied
@@ -1326,13 +1382,23 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
 
         try:
             product = entity.ai_create_product(
-                ignore_errors=form.cleaned_data["ignore_errors"]
+                ignore_errors=form.cleaned_data["ignore_errors"], creator=request.user
             )
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         serializer = EntityAiNestedProductSerializer(product)
         return JsonResponse(serializer.data)
+
+    @action(detail=False)
+    def meli_redirect(self, request):
+        url = request.query_params.get("url", "")
+        redis = Redis(
+            url=settings.UPSTASH_REDIS_REST_URL, token=settings.UPSTASH_REDIS_REST_TOKEN
+        )
+        comission_url = redis.get(url)
+        final_url = comission_url or url
+        return HttpResponseRedirect(final_url)
 
 
 class EntityHistoryViewSet(viewsets.ReadOnlyModelViewSet):

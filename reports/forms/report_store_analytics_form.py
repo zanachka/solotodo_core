@@ -40,7 +40,7 @@ class ReportStoreAnalyticsForm(forms.Form):
             count(*) as total_clicks,
             sum(price) as total_price_sum,
             min(price) as min_price,
-            round(sum(price) / count(*)) as average_price,
+            round(IFNULL(SAFE_DIVIDE(sum(price), count(*)), 0)) as average_price,
         """
         if selected_store:
             retailer_case_count = (
@@ -51,10 +51,10 @@ class ReportStoreAnalyticsForm(forms.Form):
             )
             select_cause += f"""
                 count({retailer_case_count}) as retailer_clicks,
-                round((count({retailer_case_count}) / count(*)), 4) as precentage_clicks,
+                round(IFNULL(SAFE_DIVIDE(count({retailer_case_count}), count(*)), 0), 4) as precentage_clicks,
                 sum({retailer_case_price}) as retailer_sum,
                 sum(price) - sum({retailer_case_price}) as diff,
-                round((sum({retailer_case_price}) / sum(price)), 4) as percentage_sum,
+                round(IFNULL(SAFE_DIVIDE(sum({retailer_case_price}), sum(price)), 0), 4) as percentage_sum,
                 IFNULL(safe_divide(sum({retailer_case_price}), count({retailer_case_count})), 0) as retailer_average_price,
                 min({retailer_case_price}) as retailer_min_price,
             """
@@ -104,7 +104,9 @@ class ReportStoreAnalyticsForm(forms.Form):
         products = Product.objects.filter(
             pk__in=products_df["product_id"].to_list()
         ).select_related("instance_model__model__category", "brand")
-        Product.prefetch_specs(products)
+
+        # Times out with too many products
+        # Product.prefetch_specs(products)
 
         current_product_ids = list(set([p.id for p in products]))
 

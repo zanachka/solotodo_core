@@ -39,6 +39,7 @@ from .category_specs_order import CategorySpecsOrder
 from .visit import Visit
 from .store_section import StoreSection
 from .entity_section_position import EntitySectionPosition
+from .store_section_positions_update_log import StoreSectionPositionsUpdateLog
 from .product_video import ProductVideo
 from .coupon import Coupon
 from .product_field_watcher import ProductFieldWatcher
