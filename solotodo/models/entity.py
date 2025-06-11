@@ -38,7 +38,9 @@ from metamodel.models import InstanceModel
 
 class EntityQueryset(models.QuerySet):
     def get_available(self):
-        return self.filter(active_registry__stock__ne=0)
+        return self.filter(active_registry__isnull=False).exclude(
+            active_registry__stock=0
+        )
 
     def get_unavailable(self):
         return self.filter(
