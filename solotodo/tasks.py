@@ -293,7 +293,7 @@ def store_update_individual_section_positions(
             )
     except ConcurrencyLimitReached as e:
         cache_key = f"store_update_individual_section_positions:ConcurrencyLimitReached:{update_log.id}:{hash(section)}"
-        limit = 300
+        limit = 500
 
         try:
             with memcached_retry_tracker(cache_key, limit):
