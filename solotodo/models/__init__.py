@@ -5,7 +5,7 @@ from django.dispatch import receiver
 from django.utils import timezone
 from django.db.models import Lookup
 from django.db.models.fields import Field
-from elasticsearch import NotFoundError
+from elasticsearch import NotFoundError, ConflictError
 
 from rest_framework.authtoken.models import Token
 
@@ -111,6 +111,10 @@ def update_entity_in_es(sender, instance, **kwargs):
         try:
             EsEntity.get_by_entity_id(instance.id).delete()
         except NotFoundError:
+            pass
+        except (
+            ConflictError
+        ):  # To prevent exception on two workers trying to delete the same doc
             pass
 
 
