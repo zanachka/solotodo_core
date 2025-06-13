@@ -132,8 +132,15 @@ class AIProductsBrowseForm(forms.Form):
         )
         llm = settings.LLM.with_structured_output(Classification)
         prompt = tagging_prompt.invoke({"input": query})
+        response = dict(llm.invoke(prompt))
 
-        return dict(llm.invoke(prompt))
+        if (
+            response["product_category"] not in categories
+            or response["product_category"] == "-- Sin categoría relevante --"
+        ):
+            response["product_category"] = None
+
+        return response
 
     def append_category_filter(self, filters, category_name):
         for filter in filters["bool"]["filter"]:
@@ -146,7 +153,7 @@ class AIProductsBrowseForm(forms.Form):
                     child["query"] = {"bool": {"filter": [{"terms": base_terms}]}}
 
                 child["query"]["bool"]["filter"].append(
-                    {"terms": {"category_name": [category_name]}}
+                    {"term": {"category_name": category_name}}
                 )
 
                 break
@@ -155,7 +162,12 @@ class AIProductsBrowseForm(forms.Form):
 
     def ai_search(self, query, filters):
         requirements = self.ai_infer_query_requirements(query)
-        filters = self.append_category_filter(filters, requirements["product_category"])
+        print(requirements)
+        if requirements["product_category"]:
+            filters = self.append_category_filter(
+                filters, requirements["product_category"]
+            )
+
         retrieval_qa_chat_prompt = ChatPromptTemplate.from_messages(
             [
                 (
