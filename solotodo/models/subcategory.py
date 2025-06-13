@@ -8,6 +8,7 @@ class Subcategory(models.Model):
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
     params = models.CharField(max_length=255)
+    meta_tag_description = models.CharField(max_length=255, null=True, blank=True)
 
     def __str__(self):
         return f"{self.category} - {self.name}"

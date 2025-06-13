@@ -854,4 +854,12 @@ class EntityAiAssociationResultSerializer(serializers.Serializer):
 class SubcategorySerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = Subcategory
-        fields = ("id", "url", "category", "name", "slug", "params")
+        fields = (
+            "id",
+            "url",
+            "category",
+            "name",
+            "slug",
+            "params",
+            "meta_tag_description",
+        )
