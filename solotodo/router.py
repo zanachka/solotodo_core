@@ -26,6 +26,7 @@ from solotodo.views import (
     ProductVideoViewSet,
     BundleViewSet,
     StoreSectionPositionsUpdateLogViewSet,
+    SubcategoryViewSet,
 )
 
 router = routers.SimpleRouter()
@@ -56,3 +57,4 @@ router.register(r"brands", BrandViewSet)
 router.register(r"entity_section_positions", EntitySectionPositionViewSet)
 router.register(r"store_sections", StoreSectionViewSet)
 router.register(r"product_videos", ProductVideoViewSet)
+router.register(r"subcategories", SubcategoryViewSet)

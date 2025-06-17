@@ -5,7 +5,7 @@ from django.dispatch import receiver
 from django.utils import timezone
 from django.db.models import Lookup
 from django.db.models.fields import Field
-from elasticsearch import NotFoundError
+from elasticsearch import NotFoundError, ConflictError
 
 from rest_framework.authtoken.models import Token
 
@@ -43,6 +43,7 @@ from .store_section_positions_update_log import StoreSectionPositionsUpdateLog
 from .product_video import ProductVideo
 from .coupon import Coupon
 from .product_field_watcher import ProductFieldWatcher
+from .subcategory import Subcategory
 
 # ElasticSearch DSL persistence models
 from .es_product_entities import EsProductEntities
@@ -111,6 +112,10 @@ def update_entity_in_es(sender, instance, **kwargs):
             EsEntity.get_by_entity_id(instance.id).delete()
         except NotFoundError:
             pass
+        except (
+            ConflictError
+        ):  # To prevent exception on two workers trying to delete the same doc
+            pass
 
 
 @receiver(post_delete, sender=Entity)
@@ -119,14 +124,3 @@ def delete_entity_from_es(sender, instance, using, **kwargs):
         EsEntity.get_by_entity_id(instance.id).delete()
     except NotFoundError:
         pass
-
-
-@Field.register_lookup
-class NotEqual(Lookup):
-    lookup_name = "ne"
-
-    def as_sql(self, compiler, connection):
-        lhs, lhs_params = self.process_lhs(compiler, connection)
-        rhs, rhs_params = self.process_rhs(compiler, connection)
-        params = lhs_params + rhs_params
-        return "%s <> %s" % (lhs, rhs), params

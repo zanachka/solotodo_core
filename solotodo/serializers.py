@@ -32,6 +32,7 @@ from solotodo.models import (
     Bundle,
     Coupon,
     StoreSectionPositionsUpdateLog,
+    Subcategory,
 )
 from solotodo.serializer_utils import (
     StorePrimaryKeyRelatedField,
@@ -223,6 +224,7 @@ class CategorySerializer(serializers.HyperlinkedModelSerializer):
             "browse_result_template",
             "detail_template",
             "is_ai_managed",
+            "meta_tag_description",
         )
 
 
@@ -849,3 +851,17 @@ class EntityAiAssociationResultSerializer(serializers.Serializer):
         result["associated_product"] = product
 
         return result
+
+
+class SubcategorySerializer(serializers.HyperlinkedModelSerializer):
+    class Meta:
+        model = Subcategory
+        fields = (
+            "id",
+            "url",
+            "category",
+            "name",
+            "slug",
+            "params",
+            "meta_tag_description",
+        )

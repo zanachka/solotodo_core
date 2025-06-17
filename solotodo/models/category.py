@@ -71,6 +71,8 @@ class Category(models.Model):
         null=True, blank=True
     )
 
+    meta_tag_description = models.CharField(max_length=255, null=True, blank=True)
+
     objects = CategoryQuerySet.as_manager()
 
     def __str__(self):
