@@ -4,7 +4,6 @@ import re
 
 from decimal import Decimal
 
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.storage import default_storage
 from django.core.validators import validate_comma_separated_integer_list
@@ -608,9 +607,11 @@ class Product(models.Model):
         return result
 
     def ai_generate_description(self):
+        from django.conf import settings
+
         tagging_prompt = ChatPromptTemplate.from_template(
             """
-            Redacta una descripción neutral y objetiva del producto usando la información proporcionada.
+            Redacta una descripción informativa, neutral y objetiva del producto usando la información proporcionada.
             
             Considera todos estos puntos:
             
@@ -618,31 +619,27 @@ class Product(models.Model):
             - No uses encabezados, titulos, ni agregues comentarios, tu respuesta será publicada tal cual la retornes.
             - El objetivo es informar, no convencer ni incluir opiniones.
             - Debe tener un primer párrafo que describa el producto de manera clara y neutral.
-            - Debe tener un segundo párrafo que explique los casos de uso del producto, sus ventajas y limitaciones de manera neutral.
+            - Debe tener un segundo párrafo que explique los casos de uso del producto, sus ventajas y desventajas de manera neutral.
             - Utiliza negritas para destacar frases clave.
             - Limítate a retornar solo los 2 párrafos solicitados.
             
             Información del producto: {input}
             """
         )
-        related_entities = self.entity_set
 
-        if related_entities:
-            descriptions = [
-                e.description
-                for e in related_entities.filter(description__isnull=False)
-            ]
-            input = f"{self.ai_specs}\n\n{".\n\n".join(descriptions)}"
-        else:
-            input = f"{self.ai_specs}"
+        descriptions = [
+            e.description for e in self.entity_set.filter(description__isnull=False)
+        ]
+        input = f"{self.ai_specs}\n\n{".\n\n".join(descriptions)}"
 
         prompt = tagging_prompt.invoke({"input": input})
-        llm = settings.LLM
-        seo_description = llm.invoke(prompt)
+        seo_description = settings.LLM.invoke(prompt)
 
         return seo_description.content
 
     def update_ai_description(self):
+        from django.conf import settings
+
         page_content = json.dumps(
             {
                 "specs": self.ai_specs,
