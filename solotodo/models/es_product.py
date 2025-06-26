@@ -22,18 +22,23 @@ class EsProduct(EsProductEntities):
     specs = Object(dynamic=True)
     related_instance_model_ids = Integer(multi=True)
 
+    # Fields used by the vector store that finds similar products
+    # The "text" fields doesn't seem to be used anywhere
     text = Text(fields={"keyword": Keyword()})
-    summary_text = Text(fields={"keyword": Keyword()})
-    metadata = Object(
-        dynamic=True, properties={"source": Text(fields={"keyword": Keyword()})}
-    )
     vector = DenseVector(
         dims=3072,
         index=True,
         similarity="cosine",
         index_options={"type": "int8_hnsw", "m": 16, "ef_construction": 100},
     )
-    summary_vector = DenseVector(
+
+    ai_description = Text(fields={"keyword": Keyword()})
+    ai_meta_tag_description = Text(fields={"keyword": Keyword()})
+
+    metadata = Object(
+        dynamic=True, properties={"source": Text(fields={"keyword": Keyword()})}
+    )
+    search_vector = DenseVector(
         dims=3072,
         index=True,
         similarity="cosine",

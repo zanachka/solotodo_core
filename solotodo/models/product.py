@@ -116,9 +116,12 @@ class Product(models.Model):
 
     @property
     def ai_description(self):
-        return json.loads(EsProduct.get_by_product_id(self.pk).summary_text)[
-            "description"
-        ]
+        raw_ai_description = EsProduct.get_by_product_id(self.pk).summary_text
+
+        if raw_ai_description:
+            return json.loads(raw_ai_description)["description"]
+        else:
+            return None
 
     def __init__(self, *args, **kwargs):
         self._es_entry = None
@@ -637,21 +640,45 @@ class Product(models.Model):
 
         return seo_description.content
 
+    def ai_generate_meta_tag_description(self):
+        from django.conf import settings
+
+        tagging_prompt = ChatPromptTemplate.from_template(
+            """
+            Genera una descripción de este producto, para ser usada en un meta tag de "description".
+            
+            El resultado debe tener 160 caracteres de largo o menos
+            Sólo retorna el contenido, sin comentarios: {input}
+            """
+        )
+
+        descriptions = [
+            e.description for e in self.entity_set.filter(description__isnull=False)
+        ]
+        joined_descriptions = f"{self.ai_specs}\n\n{".\n\n".join(descriptions)}"
+
+        prompt = tagging_prompt.invoke({"input": joined_descriptions})
+        seo_description = settings.LLM.invoke(prompt)
+
+        return seo_description.content
+
     def update_ai_description(self):
         from django.conf import settings
 
-        page_content = json.dumps(
-            {
-                "specs": self.ai_specs,
-                "description": self.ai_generate_description(),
-            }
-        )
+        ai_description = self.ai_generate_description()
 
-        vector = settings.VECTOR_STORE.embedding.embed_documents([page_content])[0]
+        search_vector_content = "\n".join(
+            [f"{key}: {value}" for key, value in self.ai_specs.items()]
+        )
+        search_vector_content += f"\nDescription: {ai_description}"
+        search_vector = settings.VECTOR_STORE.embedding.embed_documents(
+            [search_vector_content]
+        )[0]
 
         es_product = EsProduct.get_by_product_id(self.pk)
-        es_product.summary_text = page_content
-        es_product.summary_vector = vector
+        es_product.ai_description = ai_description
+        es_product.ai_meta_tag_description = self.ai_generate_meta_tag_description()
+        es_product.search_vector = search_vector
         es_product.save()
 
     def vector_distance(self, other_product):
