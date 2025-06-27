@@ -318,6 +318,6 @@ def store_update_individual_section_positions(
 
 
 @shared_task(queue="ai", ignore_result=True)
-def ai_generate_product_descriptions(product_id):
+def ai_update_product_descriptions(product_id):
     product = Product.objects.get(pk=product_id)
-    product.update_ai_description()
+    product.update_ai_descriptions()

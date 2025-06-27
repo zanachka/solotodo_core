@@ -3,7 +3,7 @@ import json
 from collections import OrderedDict
 from copy import deepcopy
 from enum import Enum
-from typing import Union
+from typing import Union, Optional, List
 from django import forms
 from django.conf import settings
 from django.core.files.storage import default_storage
@@ -11,10 +11,11 @@ from django.utils.text import slugify
 
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains.retrieval import create_retrieval_chain
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from rest_framework.reverse import reverse
 from elasticsearch_dsl import A, Q
-from pydantic import create_model
+from pydantic import create_model, BaseModel
 
 from solotodo.filters import CategoryFullBrowseEntityFilterSet
 from solotodo.forms.product_specs_form import ProductSpecsForm
@@ -112,97 +113,148 @@ class AIProductsBrowseForm(forms.Form):
 
         return price_filter
 
-    def ai_infer_query_requirements(self, query):
+    def preprocess_query(self):
+        assert self.is_valid()
         tagging_prompt = ChatPromptTemplate.from_template(
-            """ 
-        Based on the given QUERY, extract the required specification and features.
+            """
+Analyze this product search query and extract the product category, price bounds, and clean query.
 
-        QUERY: {input}
+Query: "{input}"
 
-        It will be parsed, so don't add any comment or text.
-        """
+Instructions:
+1. Identify the main product category
+2. Extract price bounds if mentioned:
+   - Maximum price: "under $500", "below 1000", "less than €800", "max $600"
+   - Minimum price: "over $200", "above 300", "more than €150", "at least $400"
+   - Price range: "between $200 and $500", "$300-$800", "from 400 to 1000"
+3. Convert prices to numeric values without currency symbols
+4. Remove all price-related phrases from the original query to create query_without_price
+5. If no specific category can be determined, use "general"
+6. If no price bounds are mentioned, leave min_price and max_price as null
+
+Examples:
+- "washing machine under $800" → category: "washing machine", max_price: 800, min_price: null, query_without_price: "washing machine"
+- "energy efficient refrigerator over $500" → category: "refrigerator", min_price: 500, max_price: null, query_without_price: "energy efficient refrigerator"
+- "laptop between $600 and $1200 for students" → category: "laptop", min_price: 600, max_price: 1200, query_without_price: "laptop for students"
+- "dishwasher for small apartment" → category: "dishwasher", min_price: null, max_price: null, query_without_price: "dishwasher for small apartment"
+"""
         )
-        categories = list(Category.objects.all().values_list("name", flat=True))
-        enum = Enum("categoryEnum", {choice: choice for choice in categories}, type=str)
 
-        Classification = create_model(
-            "Classification",
-            product_category=(Union[enum, str], "the type of product"),
-            features=(list[str], "the requested specifications and features"),
+        categories = {
+            str(cat): cat for cat in Category.objects.filter(meta_model__isnull=False)
+        }
+        enum = Enum(
+            "categoryEnum", {choice: choice for choice in categories.keys()}, type=str
         )
-        llm = settings.LLM.with_structured_output(Classification)
-        prompt = tagging_prompt.invoke({"input": query})
+
+        class QueryAnalysis(BaseModel):
+            categories: List[enum]
+            min_price: Optional[float] = None
+            max_price: Optional[float] = None
+            query_without_price: str
+
+        llm = settings.LLM.with_structured_output(QueryAnalysis)
+        prompt = tagging_prompt.invoke({"input": self.cleaned_data["search"]})
         response = dict(llm.invoke(prompt))
 
-        if (
-            response["product_category"] not in categories
-            or response["product_category"] == "-- Sin categoría relevante --"
-        ):
-            response["product_category"] = None
+        final_categories = []
+        for category_name in response["categories"]:
+            if category_name in categories:
+                final_categories.append(categories[category_name])
+
+        response["categories"] = final_categories
+        return response
+
+    def hybrid_search(self, query, k, category):
+        """Perform hybrid search combining vector similarity and keyword matching using elasticsearch-dsl"""
+
+        from elasticsearch_dsl import Search, Q
+
+        search = EsProduct.search()
+        query_vector = settings.VECTOR_STORE.embedding.embed_documents([query])[0]
+
+        # Create vector similarity query
+        vector_query = Q(
+            "script_score",
+            query=Q("match_all"),
+            script={
+                "source": "cosineSimilarity(params.query_vector, 'search_vector') + 1.0",
+                "params": {"query_vector": query_vector},
+            },
+        )
+
+        # Create keyword search query
+        keyword_query = Q(
+            "multi_match",
+            query=query,
+            fields=["name^2", "ai_description", "category_name^1.5"],
+            type="best_fields",
+        )
+
+        # Combine queries using bool should
+        # shoulds = [vector_query, keyword_query]
+        shoulds = [vector_query]
+        combined_query = Q("bool", should=shoulds, minimum_should_match=1)
+
+        # Apply filters
+        filters = [Q("exists", field="search_vector")]
+
+        # Category filter
+        if category:
+            filters.append(Q("term", category_id=category.id))
+
+        # Price range filters
+        # if min_price is not None or max_price is not None:
+        #     price_range = {}
+        #     if min_price is not None:
+        #         price_range["gte"] = min_price
+        #     if max_price is not None:
+        #         price_range["lte"] = max_price
+        #     filters.append(Q("range", price=price_range))
+
+        # Apply filters to the query
+        if filters:
+            combined_query = Q("bool", must=combined_query, filter=filters)
+
+        # Execute search
+        search = search.query(combined_query).extra(size=k)
+        print(json.dumps(search.to_dict()))
+        response = search.execute()
 
         return response
 
-    def append_category_filter(self, filters, category_name):
-        for filter in filters["bool"]["filter"]:
-            if "has_child" in filter:
-                child = filter["has_child"]
-                query = child["query"]
-
-                if "terms" in query:
-                    base_terms = deepcopy(query["terms"])
-                    child["query"] = {"bool": {"filter": [{"terms": base_terms}]}}
-
-                child["query"]["bool"]["filter"].append(
-                    {"term": {"category_name": category_name}}
-                )
-
-                break
-
-        return filters
-
     def ai_search(self, query, filters):
-        requirements = self.ai_infer_query_requirements(query)
-        print(requirements)
-        if requirements["product_category"]:
-            filters = self.append_category_filter(
-                filters, requirements["product_category"]
-            )
+        """Extract intent and requirements from natural language query"""
 
-        retrieval_qa_chat_prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "Answer any use questions based solely on the context below:\n\n<context>\n{context}\n</context>",
-                ),
-                ("human", "{input}"),
-            ]
-        )
-        combine_docs_chain = create_stuff_documents_chain(
-            settings.LLM, retrieval_qa_chat_prompt
-        )
+        analysis_prompt = ChatPromptTemplate.from_template(
+            """
+        Analyze this product search query and extract key requirements:
 
-        prompt = f"""
-        Based on the given REQUIREMENTS, return a list of product_ids.
+        Query: "{query}"
 
-        REQUIREMENTS: {" ".join(requirements["features"])}
+        Extract the following information:
+        1. Product category (e.g., washing machine, refrigerator, laptop)
+        2. Key requirements (e.g., capacity, size, features, budget)
+        3. User context (e.g., family size, usage patterns)
+        4. Important specifications to prioritize
 
-        1. Compare the products information against the REQUIREMENTS
-        2. Only include products that match ALL REQUIREMENT
-        
-        The return list will be parsed, so don't add any comment or text.
+        Respond in JSON format:
+        {{
+            "category": "product category",
+            "requirements": ["requirement1", "requirement2"],
+            "context": "user context",
+            "priority_specs": ["spec1", "spec2"]
+        }}
         """
-
-        retriever = settings.VECTOR_STORE_2.as_retriever(
-            search_type="similarity",
-            search_kwargs={"k": 100, "fetch_k": 10000, "filter": filters},
         )
-        retrieval_chain = create_retrieval_chain(
-            retriever,
-            combine_docs_chain,
-        )
-        response = retrieval_chain.invoke({"input": prompt})
 
-        return json.loads(response["answer"])
+        chain = analysis_prompt | settings.LLM | StrOutputParser()
+        try:
+            result = chain.invoke({"query": query})
+            # Parse JSON response (you might want to add proper JSON parsing)
+            return {"raw_analysis": result, "original_query": query}
+        except:
+            return {"original_query": query, "category": "general"}
 
     def get_category_products(self, request, category=None):
         from solotodo.models import EsProduct, EsEntity

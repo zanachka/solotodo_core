@@ -13,7 +13,6 @@ from django.db.models.deletion import Collector
 from django.utils.text import slugify
 from langchain_core.prompts import ChatPromptTemplate
 from sklearn.neighbors import NearestNeighbors
-from scipy.spatial import distance
 
 from metamodel.models import InstanceModel
 from .es_product import EsProduct
@@ -647,8 +646,10 @@ class Product(models.Model):
             """
             Genera una descripción de este producto, para ser usada en un meta tag de "description".
             
-            El resultado debe tener 160 caracteres de largo o menos
-            Sólo retorna el contenido, sin comentarios: {input}
+            - El resultado debe tener 160 caracteres de largo o menos
+            - No uses encabezados, titulos, ni agregues comentarios, tu respuesta será publicada tal cual la retornes.
+            
+            Datos del producto: {input}
             """
         )
 
@@ -662,7 +663,7 @@ class Product(models.Model):
 
         return seo_description.content
 
-    def update_ai_description(self):
+    def update_ai_descriptions(self):
         from django.conf import settings
 
         ai_description = self.ai_generate_description()
@@ -680,13 +681,6 @@ class Product(models.Model):
         es_product.ai_meta_tag_description = self.ai_generate_meta_tag_description()
         es_product.search_vector = search_vector
         es_product.save()
-
-    def vector_distance(self, other_product):
-        from .es_product import EsProduct
-
-        vector_1 = EsProduct.get_by_product_id(self.id).vector
-        vector_2 = EsProduct.get_by_product_id(other_product.id).vector
-        return distance.cosine(vector_1, vector_2)
 
     class Meta:
         app_label = "solotodo"
