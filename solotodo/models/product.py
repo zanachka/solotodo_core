@@ -679,6 +679,7 @@ class Product(models.Model):
         es_product = EsProduct.get_by_product_id(self.pk)
         es_product.ai_description = ai_description
         es_product.ai_meta_tag_description = self.ai_generate_meta_tag_description()
+        es_product.text = search_vector_content
         es_product.search_vector = search_vector
         es_product.save()
 

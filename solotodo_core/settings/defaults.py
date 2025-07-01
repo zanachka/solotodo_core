@@ -449,11 +449,6 @@ SENDINBLUE_KEY = ""
 
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./gcp_credentials.json"
 
-LENOVO_RETAILER_TIER = {
-    "A": [9, 11, 18, 43, 87, 30, 5, 12, 260],
-    "B": [86, 14, 294, 45, 4880, 788],
-}
-
 DUEMINT_KEY = ""
 
 STAFF_EXTERNAL_SERVICES_IDS = {}
