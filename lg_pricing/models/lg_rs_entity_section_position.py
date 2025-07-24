@@ -51,10 +51,10 @@ class LgRsEntitySectionPosition(models.Model):
                 entity_history__entity__product__isnull=False,
             )
             .select_related(
-                "entity__store",
-                "entity__category",
-                "entity__product__instance_model",
-                "entity__product__brand",
+                "entity_history__entity__store",
+                "entity_history__entity__category",
+                "entity_history__entity__product__instance_model",
+                "entity_history__entity__product__brand",
                 "section",
             )
             .annotate(date=TruncDate("entity_history__timestamp"))
