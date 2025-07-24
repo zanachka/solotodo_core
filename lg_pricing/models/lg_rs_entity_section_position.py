@@ -10,8 +10,6 @@ from django.db.models.functions import TruncDate
 from django_redshift_backend.distkey import DistKey
 from guardian.shortcuts import get_objects_for_group
 
-from solotodo.models import Entity, StoreSection
-from solotodo.utils import iterable_to_dict
 from solotodo_core.s3utils import PrivateSaS3Boto3Storage
 
 
@@ -43,113 +41,85 @@ class LgRsEntitySectionPosition(models.Model):
 
         lg_group = Group.objects.get(pk=settings.LG_CHILE_GROUP_ID)
 
-        stores = get_objects_for_group(lg_group, 'view_store', Store)
-        categories = get_objects_for_group(lg_group, 'view_category', Category)
+        stores = get_objects_for_group(lg_group, "view_store", Store)
+        categories = get_objects_for_group(lg_group, "view_category", Category)
 
-        positions_to_synchronize = EntitySectionPosition.objects.filter(
-            entity_history__entity__store__in=stores,
-            entity_history__entity__category__in=categories,
-            entity_history__entity__product__isnull=False
-        ).annotate(date=TruncDate('entity_history__timestamp'))
+        positions_to_synchronize = (
+            EntitySectionPosition.objects.filter(
+                entity_history__entity__store__in=stores,
+                entity_history__entity__category__in=categories,
+                entity_history__entity__product__isnull=False,
+            )
+            .select_related(
+                "entity_history__entity__store",
+                "entity_history__entity__category",
+                "entity_history__entity__product__instance_model",
+                "entity_history__entity__product__brand",
+                "section",
+            )
+            .annotate(date=TruncDate("entity_history__timestamp"))
+        )
 
-        last_synchronization = cls.objects.aggregate(Max('date'))['date__max']
+        last_synchronization = cls.objects.aggregate(Max("date"))["date__max"]
 
         if last_synchronization:
-            print('Synchronizing since {}'.format(last_synchronization))
+            print("Synchronizing since {}".format(last_synchronization))
             positions_to_synchronize = positions_to_synchronize.filter(
                 entity_history__timestamp__gte=last_synchronization
             )
         else:
-            print('Synchronizing from scratch')
+            print("Synchronizing from scratch")
 
-        print('Obtaining data')
-
-        latest_positions = positions_to_synchronize\
-            .order_by('entity_history__entity',
-                      'section',
-                      'entity_history__timestamp')\
-            .select_related('entity_history')
-        latest_positions_dict = {}
-
-        for x in latest_positions:
-            latest_positions_dict[
-                (x.entity_history.entity_id, x.section_id, x.date)] = x.value
-
-        aggregated_positions = positions_to_synchronize \
-            .order_by(
-                'date',
-                'entity_history__entity',
-                'section')\
-            .values(
-                'date',
-                'entity_history__entity',
-                'section'
-            ).annotate(min_value=Min('value'))
-
-        entity_ids = set([x['entity_history__entity']
-                          for x in aggregated_positions])
-        entities = Entity.objects.filter(pk__in=entity_ids).select_related(
-            'store',
-            'category',
-            'product__instance_model',
-            'product__brand'
-        )
-        entities_dict = iterable_to_dict(entities)
-
-        section_ids = set([x['section'] for x in aggregated_positions])
-        sections = StoreSection.objects.filter(
-            pk__in=section_ids).select_related('store')
-        sections_dict = iterable_to_dict(sections)
-
-        print('Creating in memory CSV File')
+        print("Creating in memory CSV File")
         output = io.StringIO()
         writer = csv.writer(output)
-        data_count = len(aggregated_positions)
+        data_count = len(positions_to_synchronize)
 
-        for idx, entry in enumerate(aggregated_positions):
-            print('Processing: {} / {}'.format(idx + 1, data_count))
-            entity = entities_dict[entry['entity_history__entity']]
-            section = sections_dict[entry['section']]
-            latest_position = latest_positions_dict[(entity.id, section.id,
-                                                     entry['date'])]
+        for idx, entity_section_position in enumerate(positions_to_synchronize):
+            print("Processing: {} / {}".format(idx + 1, data_count))
+            entity = entity_section_position.entity
+            section = entity_section_position.section
 
-            writer.writerow([
-                entry['min_value'],
-                section.id,
-                str(section),
-                entity.store.id,
-                str(entity.store),
-                entry['date'],
-                entity.id,
-                entity.name,
-                entity.category.id,
-                str(entity.category),
-                entity.product.id,
-                str(entity.product),
-                entity.product.brand.id,
-                str(entity.product.brand),
-                entity.sku,
-                entity.url,
-                latest_position
-            ])
+            writer.writerow(
+                [
+                    entity_section_position.value,
+                    section.id,
+                    str(section),
+                    entity.store.id,
+                    str(entity.store),
+                    entity_section_position.date,
+                    entity.id,
+                    entity.name,
+                    entity.category.id,
+                    str(entity.category),
+                    entity.product.id,
+                    str(entity.product),
+                    entity.product.brand.id,
+                    str(entity.product.brand),
+                    entity.sku,
+                    entity.url,
+                    entity_section_position.value,
+                    entity_section_position.is_sponsored,
+                ]
+            )
 
         output.seek(0)
-        file_for_upload = ContentFile(output.getvalue().encode('utf-8'))
+        file_for_upload = ContentFile(output.getvalue().encode("utf-8"))
 
-        print('Uploading CSV file')
+        print("Uploading CSV file")
 
         storage = PrivateSaS3Boto3Storage()
         storage.file_overwrite = True
-        path = 'lg_pricing/entity_positions.csv'
+        path = "lg_pricing/entity_positions.csv"
         storage.save(path, file_for_upload)
 
         if last_synchronization:
-            print('Deleting existing entity positions in Redshift')
+            print("Deleting existing entity positions in Redshift")
             cls.objects.filter(date__gte=last_synchronization).delete()
 
-        print('Loading new data into Redshift')
+        print("Loading new data into Redshift")
 
-        cursor = connections['lg_pricing'].cursor()
+        cursor = connections["lg_pricing"].cursor()
         command = """
                     copy {} from 's3://{}/{}'
                     credentials 'aws_access_key_id={};aws_secret_access_key={}'
@@ -159,13 +129,13 @@ class LgRsEntitySectionPosition(models.Model):
             settings.AWS_SA_STORAGE_BUCKET_NAME,
             path,
             settings.AWS_ACCESS_KEY_ID,
-            settings.AWS_SECRET_ACCESS_KEY
+            settings.AWS_SECRET_ACCESS_KEY,
         )
 
         cursor.execute(command)
         cursor.close()
 
     class Meta:
-        app_label = 'lg_pricing'
-        indexes = [DistKey(fields=['brand_id'])]
-        ordering = ['date']
+        app_label = "lg_pricing"
+        indexes = [DistKey(fields=["brand_id"])]
+        ordering = ["date"]
