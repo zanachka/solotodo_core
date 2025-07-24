@@ -31,6 +31,7 @@ class LgRsEntitySectionPosition(models.Model):
     brand_name = models.CharField(max_length=256)
     sku = models.CharField(max_length=256, blank=True, null=True)
     url = models.URLField(max_length=512)
+    is_sponsored = models.BooleanField(default=False)
 
     def str(self):
         return self.id
