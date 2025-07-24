@@ -18,13 +18,6 @@ class ProductsBrowseForm(forms.Form):
     stores = forms.ModelMultipleChoiceField(
         queryset=Store.objects.all(), required=False
     )
-    lenovo_store_tiers = forms.MultipleChoiceField(
-        choices=[
-            (key, "Retailer {}".format(key))
-            for key in settings.LENOVO_RETAILER_TIER.keys()
-        ],
-        required=False,
-    )
     products = forms.ModelMultipleChoiceField(
         queryset=Product.objects.all(), required=False
     )
@@ -180,13 +173,6 @@ class ProductsBrowseForm(forms.Form):
 
         store_ids = [x.id for x in self.cleaned_data["stores"]]
 
-        lenovo_store_tiers = self.cleaned_data["lenovo_store_tiers"]
-        if lenovo_store_tiers:
-            lenovo_store_ids = []
-            for tier in lenovo_store_tiers:
-                lenovo_store_ids.extend(settings.LENOVO_RETAILER_TIER[tier])
-            store_ids = [sid for sid in store_ids if sid in lenovo_store_ids]
-
         stores_filter = Q("terms", store_id=store_ids)
 
         price_filter = self.get_price_filter()
@@ -318,14 +304,52 @@ class ProductsBrowseForm(forms.Form):
 
         keywords = self.cleaned_data["search"]
         if keywords:
-            if keyword_search_type == "filter":
-                keywords_query = Product.query_es_by_search_string(keywords, mode="AND")
-                search = search.filter(keywords_query)
-            elif keyword_search_type == "query":
-                keywords_query = Product.query_es_by_search_string(keywords, mode="OR")
-                search = search.query(keywords_query)
-            else:
-                raise Exception("Invalid keyword_search_type")
+            # 1. Exact phrase matching (highest boost)
+            exact_match = Q(
+                "multi_match",
+                query=keywords,
+                fields=["name_analyzed^3", "description^1"],
+                type="phrase",
+                # boost=5.0,
+                min_score=0.5,
+            )
+
+            # 4. Standard matching
+            standard_match = Q(
+                "multi_match",
+                query=keywords,
+                fields=["name_analyzed^2", "description"],
+                # boost=1.0,
+                # min_score=0.5,
+            )
+
+            # 5. Wildcard search for partial words
+            wildcard_query = Q(
+                "query_string",
+                query=f"*{keywords}*",
+                fields=["name_analyzed^1.5", "description^0.5"],
+                boost=0.5,
+            )
+
+            # Combine all queries with should (OR logic)
+            combined_query = Q(
+                "bool",
+                should=[
+                    exact_match,
+                    standard_match,
+                    # wildcard_query,
+                ],
+            )
+            search = search.filter(standard_match)
+
+            # if keyword_search_type == "filter":
+            #     keywords_query = Product.query_es_by_search_string(keywords, mode="AND")
+            #     search = search.filter(keywords_query)
+            # elif keyword_search_type == "query":
+            #     keywords_query = Product.query_es_by_search_string(keywords, mode="OR")
+            #     search = search.query(keywords_query)
+            # else:
+            #     raise Exception("Invalid keyword_search_type")
 
         search = search.sort(sort_params)
         search = search.post_filter(all_specs_filter)

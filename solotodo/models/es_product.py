@@ -1,9 +1,24 @@
 import json
-from langchain_core.documents import Document
-from elasticsearch_dsl import Text, Keyword, Object, Integer, Date, DenseVector
+from elasticsearch_dsl import (
+    Text,
+    Keyword,
+    Object,
+    Integer,
+    Date,
+    DenseVector,
+    analyzer,
+)
 from .es_product_entities import EsProductEntities
 
 from django.conf import settings
+
+
+html_strip = analyzer(
+    "html_strip",
+    tokenizer="standard",
+    filter=["lowercase", "stop", "snowball"],
+    char_filter=["html_strip"],
+)
 
 
 class EsProduct(EsProductEntities):
@@ -44,6 +59,7 @@ class EsProduct(EsProductEntities):
         similarity="cosine",
         index_options={"type": "int8_hnsw", "m": 16, "ef_construction": 100},
     )
+    description = Text(analyzer=html_strip)
 
     @classmethod
     def search(cls, **kwargs):
@@ -80,8 +96,16 @@ class EsProduct(EsProductEntities):
             document_content[base_field_name] = (
                 field_value_candidate_1 or field_value_candidate_2
             )
-        page_content = json.dumps(document_content, sort_keys=True)
-        vector = settings.VECTOR_STORE.embedding.embed_documents([page_content])[0]
+        specs_content = json.dumps(document_content, sort_keys=True)
+
+        description = "\n".join(
+            [f"{key}: {value}" for key, value in document_content.items()]
+        )
+        for entity in product.entity_set.filter(description__isnull=False):
+            description += "\n" + entity.description
+
+        vector = settings.VECTOR_STORE.embedding.embed_documents([specs_content])[0]
+
         metadata = {
             "id": product.id,
             "category_id": product.category_id,
@@ -104,7 +128,8 @@ class EsProduct(EsProductEntities):
             related_instance_model_ids=related_instance_model_ids,
             product_relationships="product",
             meta={"id": "PRODUCT_{}".format(product.id)},
-            text=page_content,
+            text=specs_content,
             vector=vector,
             metadata=metadata,
+            description=description,
         )
