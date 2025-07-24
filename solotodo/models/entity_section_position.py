@@ -9,18 +9,16 @@ from .category import Category
 
 class EntitySectionPositionQuerySet(models.QuerySet):
     def get_active(self):
-        return self.filter(
-            entity_history__entity__active_registry=F('entity_history'))
+        return self.filter(entity_history__entity__active_registry=F("entity_history"))
 
     def get_inactive(self):
-        return self.exclude(
-            entity_history__entity__active_registry=F('entity_history'))
+        return self.exclude(entity_history__entity__active_registry=F("entity_history"))
 
     def filter_by_user_perms(self, user, permission):
         synth_permissions = {
-            'view_entity_positions': {
-                'store': 'view_store_entity_positions',
-                'category': 'view_category_entity_positions'
+            "view_entity_positions": {
+                "store": "view_store_entity_positions",
+                "category": "view_category_entity_positions",
             }
         }
 
@@ -29,26 +27,29 @@ class EntitySectionPositionQuerySet(models.QuerySet):
         permission = synth_permissions[permission]
 
         stores_with_permissions = Store.objects.filter_by_user_perms(
-            user, permission['store'])
+            user, permission["store"]
+        )
         categories_with_permissions = Category.objects.filter_by_user_perms(
-            user, permission['category'])
+            user, permission["category"]
+        )
 
         return self.filter(
             entity_history__entity__store__in=stores_with_permissions,
-            entity_history__entity__category__in=categories_with_permissions)
+            entity_history__entity__category__in=categories_with_permissions,
+        )
 
 
 class EntitySectionPosition(models.Model):
     entity_history = models.ForeignKey(EntityHistory, on_delete=models.CASCADE)
     section = models.ForeignKey(StoreSection, on_delete=models.CASCADE)
     value = models.IntegerField()
+    is_sponsored = models.BooleanField(default=False)
 
     objects = EntitySectionPositionQuerySet.as_manager()
 
     def __str__(self):
-        return '{} - {} - {}'.format(self.value, self.entity_history,
-                                     self.section)
+        return "{} - {} - {}".format(self.value, self.entity_history, self.section)
 
     class Meta:
-        app_label = 'solotodo'
-        ordering = ('entity_history', 'section', 'value')
+        app_label = "solotodo"
+        ordering = ("entity_history", "section", "value")

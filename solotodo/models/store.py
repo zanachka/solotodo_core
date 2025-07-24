@@ -696,6 +696,7 @@ class Store(models.Model):
                     entity_history=entity.active_registry,
                     section=store_section,
                     value=section_position["position"],
+                    is_sponsored=section_position["is_sponsored"],
                 )
         update_log.decrement_task_counter()
 
