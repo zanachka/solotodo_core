@@ -77,7 +77,7 @@ class LgRsEntitySectionPosition(models.Model):
 
         for idx, entity_section_position in enumerate(positions_to_synchronize):
             print("Processing: {} / {}".format(idx + 1, data_count))
-            entity = entity_section_position.entity
+            entity = entity_section_position.entity_history.entity
             section = entity_section_position.section
 
             writer.writerow(
