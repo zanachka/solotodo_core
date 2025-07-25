@@ -43,7 +43,7 @@ class EntitySectionPosition(models.Model):
     entity_history = models.ForeignKey(EntityHistory, on_delete=models.CASCADE)
     section = models.ForeignKey(StoreSection, on_delete=models.CASCADE)
     value = models.IntegerField()
-    is_sponsored = models.BooleanField(default=False)
+    is_sponsored = models.BooleanField(default=False, db_index=True)
 
     objects = EntitySectionPositionQuerySet.as_manager()
 

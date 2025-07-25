@@ -5,11 +5,12 @@ from django.conf import settings
 from django.contrib.auth.models import Group
 from django.core.files.base import ContentFile
 from django.db import models, connections
-from django.db.models import Max, Min
+from django.db.models import Max, Avg
 from django.db.models.functions import TruncDate
 from django_redshift_backend.distkey import DistKey
 from guardian.shortcuts import get_objects_for_group
 
+from solotodo.utils import iterable_to_dict
 from solotodo_core.s3utils import PrivateSaS3Boto3Storage
 
 
@@ -38,28 +39,24 @@ class LgRsEntitySectionPosition(models.Model):
 
     @classmethod
     def synchronize_with_db_positions(cls):
-        from solotodo.models import Store, Category, EntitySectionPosition
+        from solotodo.models import (
+            Store,
+            Category,
+            EntitySectionPosition,
+            Entity,
+            StoreSection,
+        )
 
         lg_group = Group.objects.get(pk=settings.LG_CHILE_GROUP_ID)
 
         stores = get_objects_for_group(lg_group, "view_store", Store)
         categories = get_objects_for_group(lg_group, "view_category", Category)
 
-        positions_to_synchronize = (
-            EntitySectionPosition.objects.filter(
-                entity_history__entity__store__in=stores,
-                entity_history__entity__category__in=categories,
-                entity_history__entity__product__isnull=False,
-            )
-            .select_related(
-                "entity_history__entity__store",
-                "entity_history__entity__category",
-                "entity_history__entity__product__instance_model",
-                "entity_history__entity__product__brand",
-                "section",
-            )
-            .annotate(date=TruncDate("entity_history__timestamp"))
-        )
+        positions_to_synchronize = EntitySectionPosition.objects.filter(
+            entity_history__entity__store__in=stores,
+            entity_history__entity__category__in=categories,
+            entity_history__entity__product__isnull=False,
+        ).annotate(date=TruncDate("entity_history__timestamp"))
 
         last_synchronization = cls.objects.aggregate(Max("date"))["date__max"]
 
@@ -71,24 +68,59 @@ class LgRsEntitySectionPosition(models.Model):
         else:
             print("Synchronizing from scratch")
 
+        print("Obtaining data")
+
+        latest_positions = positions_to_synchronize.order_by(
+            "entity_history__entity", "section", "entity_history__timestamp"
+        ).select_related("entity_history")
+        latest_positions_dict = {}
+
+        for x in latest_positions:
+            latest_positions_dict[
+                (x.entity_history.entity_id, x.section_id, x.date, x.is_sponsored)
+            ] = x.value
+
+        aggregated_positions = (
+            positions_to_synchronize.order_by(
+                "date", "entity_history__entity", "section", "is_sponsored"
+            )
+            .values("date", "entity_history__entity", "section", "is_sponsored")
+            .annotate(avg_value=Avg("value"))
+        )
+
+        entity_ids = set([x["entity_history__entity"] for x in aggregated_positions])
+        entities = Entity.objects.filter(pk__in=entity_ids).select_related(
+            "store", "category", "product__instance_model", "product__brand"
+        )
+        entities_dict = iterable_to_dict(entities)
+
+        section_ids = set([x["section"] for x in aggregated_positions])
+        sections = StoreSection.objects.filter(pk__in=section_ids).select_related(
+            "store"
+        )
+        sections_dict = iterable_to_dict(sections)
+
         print("Creating in memory CSV File")
         output = io.StringIO()
         writer = csv.writer(output)
-        data_count = len(positions_to_synchronize)
+        data_count = len(aggregated_positions)
 
-        for idx, entity_section_position in enumerate(positions_to_synchronize):
+        for idx, entry in enumerate(aggregated_positions):
             print("Processing: {} / {}".format(idx + 1, data_count))
-            entity = entity_section_position.entity_history.entity
-            section = entity_section_position.section
+            entity = entities_dict[entry["entity_history__entity"]]
+            section = sections_dict[entry["section"]]
+            latest_position = latest_positions_dict[
+                (entity.id, section.id, entry["date"], entry["is_sponsored"])
+            ]
 
             writer.writerow(
                 [
-                    entity_section_position.value,
+                    entry["avg_value"],
                     section.id,
                     str(section),
                     entity.store.id,
                     str(entity.store),
-                    entity_section_position.date,
+                    entry["date"],
                     entity.id,
                     entity.name,
                     entity.category.id,
@@ -99,8 +131,8 @@ class LgRsEntitySectionPosition(models.Model):
                     str(entity.product.brand),
                     entity.sku,
                     entity.url,
-                    entity_section_position.value,
-                    entity_section_position.is_sponsored,
+                    latest_position,
+                    entry["is_sponsored"],
                 ]
             )
 
