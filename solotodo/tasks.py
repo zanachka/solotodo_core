@@ -191,13 +191,14 @@ def store_category_update_pricing(
 
         try:
             with memcached_retry_tracker(cache_key, limit):
-                update_log.decrement_task_counter()
                 logger.warning(json.dumps(payload))
                 raise self.retry(exc=e, countdown=10, max_retries=limit)
         except RetryLimitExceeded:
+            update_log.decrement_task_counter()
             update_log.save_with_error(logger)
             raise
     except Exception as e:
+        update_log.decrement_task_counter()
         update_log.save_with_error(logger)
         raise
 
@@ -241,23 +242,27 @@ def store_create_or_update_entity_from_discovery_url(
             update_log.save_with_error(logger)
             raise
     except StoreScrapError as e:
-        payload = {
-            "message": f"Error: {e}",
-            "update_log_id": update_log.id,
-        }
+
         cache_key = f"store_create_or_update_entity_from_discovery_url:StoreScrapError:{update_log_id}:{hash(discovery_url)}"
         limit = 5
 
         try:
-            with memcached_retry_tracker(cache_key, limit):
-                update_log.decrement_task_counter()
+            with memcached_retry_tracker(cache_key, limit) as tracker:
+                payload = {
+                    "message": f"Error: {e}, Current: {tracker}",
+                    "update_log_id": update_log.id,
+                    "current": tracker,
+                    "discovery_url": discovery_url,
+                }
                 logger.warning(json.dumps(payload))
                 raise self.retry(exc=e, countdown=10, max_retries=limit)
         except RetryLimitExceeded:
-            update_log.save_with_error(logger)
+            update_log.decrement_task_counter()
+            update_log.save_with_error(logger, discovery_url)
             raise
     except Exception as e:
-        update_log.save_with_error(logger)
+        update_log.decrement_task_counter()
+        update_log.save_with_error(logger, discovery_url)
         raise
 
 
@@ -315,3 +320,9 @@ def store_update_individual_section_positions(
     except Exception as e:
         update_log.save_with_error(logger)
         raise
+
+
+@shared_task(queue="ai", ignore_result=True)
+def ai_generate_product_descriptions(product_id):
+    product = Product.objects.get(pk=product_id)
+    product.update_ai_description()

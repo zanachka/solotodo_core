@@ -489,6 +489,17 @@ class Store(models.Model):
                 for entity in already_updated_entities:
                     entity.scraped_categories.add(category)
             else:
+                try:
+                    with open("archivo", "r") as f:
+                        suma_actual = int(f.read())
+                except FileNotFoundError:
+                    suma_actual = 0
+
+                nueva_suma = suma_actual + 1
+
+                with open("archivo", "w") as f:
+                    f.write(str(nueva_suma))
+
                 update_log.increment_task_counter()
                 if use_async:
                     store_create_or_update_entity_from_discovery_url.delay(
