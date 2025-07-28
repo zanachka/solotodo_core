@@ -320,9 +320,3 @@ def store_update_individual_section_positions(
     except Exception as e:
         update_log.save_with_error(logger)
         raise
-
-
-@shared_task(queue="ai", ignore_result=True)
-def ai_generate_product_descriptions(product_id):
-    product = Product.objects.get(pk=product_id)
-    product.update_ai_description()
