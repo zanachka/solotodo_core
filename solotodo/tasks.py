@@ -23,7 +23,7 @@ from storescraper.store import StoreScrapError
 
 from solotodo.utils import sha256
 
-MAX_RETRIES = 300
+MAX_RETRIES = 400
 
 
 @shared_task(queue="general", ignore_result=True)
@@ -238,7 +238,7 @@ def store_create_or_update_entity_from_discovery_url(
             with memcached_retry_tracker(cache_key, MAX_RETRIES):
                 raise self.retry(exc=e, countdown=3, max_retries=MAX_RETRIES)
         except RetryLimitExceeded:
-            update_log.save_with_error(logger)
+            update_log.save_with_error(logger, discovery_url)
     except StoreScrapError as e:
         cache_key = f"store_create_or_update_entity_from_discovery_url:StoreScrapError:{update_log_id}:{sha256(discovery_url)}"
         limit = 5
