@@ -613,19 +613,43 @@ class Product(models.Model):
 
         tagging_prompt = ChatPromptTemplate.from_template(
             """
-            Redacta una descripción informativa, neutral y objetiva del producto usando la información proporcionada.
-            
-            Considera todos estos puntos:
-            
-            - El texto debe estar en formato markdown.
-            - No uses encabezados, titulos, ni agregues comentarios, tu respuesta será publicada tal cual la retornes.
-            - El objetivo es informar, no convencer ni incluir opiniones.
-            - Debe tener un primer párrafo que describa el producto de manera clara y neutral.
-            - Debe tener un segundo párrafo que explique los casos de uso del producto, sus ventajas y desventajas de manera neutral.
-            - Utiliza negritas para destacar frases clave.
-            - Limítate a retornar solo los 2 párrafos solicitados.
-            
-            Información del producto: {input}
+            Eres un generador de descripciones de productos para un sitio de comparación de precios. 
+            A partir del siguiente input, escribe una descripción clara, imparcial, informativa, neutral y bien estructurada 
+            del producto descrito en formato Markdown.
+
+## Instrucciones:
+- Destaca las características del producto.
+- Incluye una lista con al menos 3 características principales.
+- Usa encabezados y formato Markdown para estructurar el contenido.
+
+## Input del usuario:
+
+{input}
+
+## Output esperado (en formato Markdown):
+
+[Descripción general del producto, en formato markdown, destacando en negrita sus cualidades principales]
+
+## Características destacadas
+
+- [Característica 1]
+- [Característica 2]
+- [Característica 3]
+... etcétera
+
+## Pros
+
+- [Pro 1]
+- [Pro 2]
+- [Pro 3]
+... etcétera
+
+## Contras
+
+- [Contra 1]
+- [Contra 2]
+- [Contra 3]
+... etcétera
             """
         )
 
@@ -635,7 +659,7 @@ class Product(models.Model):
         input = f"{self.ai_specs}\n\n{".\n\n".join(descriptions)}"
 
         prompt = tagging_prompt.invoke({"input": input})
-        seo_description = settings.LLM.invoke(prompt)
+        seo_description = settings.OPENAI_LLM.invoke(prompt)
 
         return seo_description.content
 
@@ -644,12 +668,12 @@ class Product(models.Model):
 
         tagging_prompt = ChatPromptTemplate.from_template(
             """
-            Genera una descripción de este producto, para ser usada en un meta tag de "description".
-            
-            - El resultado debe tener 160 caracteres de largo o menos
-            - No uses encabezados, titulos, ni agregues comentarios, tu respuesta será publicada tal cual la retornes.
-            
-            Datos del producto: {input}
+            Toma la siguiente descripción larga de un producto y genera una meta descripción en español de máximo 
+            160 caracteres. La descripción debe ser clara, concisa, y destacar el tipo de producto y sus características 
+            clave. No incluyas comillas. Esta descripción será usada como meta tag "description" en una página de comparación de precios.
+
+Descripción del producto:
+{input}
             """
         )
 
@@ -659,28 +683,16 @@ class Product(models.Model):
         joined_descriptions = f"{self.ai_specs}\n\n{".\n\n".join(descriptions)}"
 
         prompt = tagging_prompt.invoke({"input": joined_descriptions})
-        seo_description = settings.LLM.invoke(prompt)
+        seo_description = settings.OPENAI_LLM.invoke(prompt)
 
         return seo_description.content
 
     def update_ai_descriptions(self):
-        from django.conf import settings
-
         ai_description = self.ai_generate_description()
-
-        search_vector_content = "\n".join(
-            [f"{key}: {value}" for key, value in self.ai_specs.items()]
-        )
-        search_vector_content += f"\nDescription: {ai_description}"
-        search_vector = settings.VECTOR_STORE.embedding.embed_documents(
-            [search_vector_content]
-        )[0]
 
         es_product = EsProduct.get_by_product_id(self.pk)
         es_product.ai_description = ai_description
         es_product.ai_meta_tag_description = self.ai_generate_meta_tag_description()
-        es_product.text = search_vector_content
-        es_product.search_vector = search_vector
         es_product.save()
 
     class Meta:

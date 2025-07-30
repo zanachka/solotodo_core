@@ -1505,7 +1505,11 @@ class ProductViewSet(LoggingMixin, viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False)
     def browse(self, request, *args, **kwargs):
-        form = ProductsBrowseForm(request.user, request.query_params)
+        params = request.query_params.copy()
+        if "ordering" not in params:
+            params["ordering"] = "relevance"
+
+        form = ProductsBrowseForm(request.user, params)
 
         if not form.is_valid():
             return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)

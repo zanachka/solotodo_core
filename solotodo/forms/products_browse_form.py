@@ -304,52 +304,27 @@ class ProductsBrowseForm(forms.Form):
 
         keywords = self.cleaned_data["search"]
         if keywords:
-            # 1. Exact phrase matching (highest boost)
-            exact_match = Q(
-                "multi_match",
-                query=keywords,
-                fields=["name_analyzed^3", "description^1"],
-                type="phrase",
-                # boost=5.0,
-                min_score=0.5,
-            )
-
-            # 4. Standard matching
-            standard_match = Q(
-                "multi_match",
-                query=keywords,
-                fields=["name_analyzed^2", "description"],
-                # boost=1.0,
-                # min_score=0.5,
-            )
-
-            # 5. Wildcard search for partial words
-            wildcard_query = Q(
-                "query_string",
-                query=f"*{keywords}*",
-                fields=["name_analyzed^1.5", "description^0.5"],
-                boost=0.5,
-            )
-
-            # Combine all queries with should (OR logic)
-            combined_query = Q(
-                "bool",
-                should=[
-                    exact_match,
-                    standard_match,
-                    # wildcard_query,
-                ],
-            )
-            search = search.filter(standard_match)
-
-            # if keyword_search_type == "filter":
-            #     keywords_query = Product.query_es_by_search_string(keywords, mode="AND")
-            #     search = search.filter(keywords_query)
-            # elif keyword_search_type == "query":
-            #     keywords_query = Product.query_es_by_search_string(keywords, mode="OR")
-            #     search = search.query(keywords_query)
-            # else:
-            #     raise Exception("Invalid keyword_search_type")
+            if keyword_search_type == "filter":
+                keywords_query = Q(
+                    "multi_match",
+                    query=keywords,
+                    fields=["name_analyzed", "ai_description"],
+                    operator="and",
+                    # Custom fuziness to distinguish some terms ("OLED" vs "LED")
+                    fuzziness="AUTO:5,6",
+                )
+                search = search.filter(keywords_query)
+            elif keyword_search_type == "query":
+                keywords_query = Q(
+                    "multi_match",
+                    query=keywords,
+                    fields=["name_analyzed", "ai_description"],
+                    # Custom fuziness to distinguish some terms ("OLED" vs "LED")
+                    fuzziness="AUTO:5,6",
+                )
+                search = search.query(keywords_query)
+            else:
+                raise Exception("Invalid keyword_search_type")
 
         search = search.sort(sort_params)
         search = search.post_filter(all_specs_filter)

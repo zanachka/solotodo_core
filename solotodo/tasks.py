@@ -317,7 +317,7 @@ def store_update_individual_section_positions(
         raise
 
 
-@shared_task(queue="ai", ignore_result=True)
+@shared_task(queue="ai", ignore_result=True, max_retries=3, countdown=3)
 def ai_update_product_descriptions(product_id):
     product = Product.objects.get(pk=product_id)
     product.update_ai_descriptions()

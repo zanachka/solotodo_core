@@ -53,12 +53,6 @@ class EsProduct(EsProductEntities):
     metadata = Object(
         dynamic=True, properties={"source": Text(fields={"keyword": Keyword()})}
     )
-    search_vector = DenseVector(
-        dims=3072,
-        index=True,
-        similarity="cosine",
-        index_options={"type": "int8_hnsw", "m": 16, "ef_construction": 100},
-    )
     description = Text(analyzer=html_strip)
 
     @classmethod
