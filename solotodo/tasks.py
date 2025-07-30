@@ -297,7 +297,7 @@ def store_update_individual_section_positions(
 
         try:
             with memcached_retry_tracker(cache_key, MAX_RETRIES):
-                raise self.retry(exc=e, countdown=3)
+                raise self.retry(exc=e, countdown=20)
         except RetryLimitExceeded:
             update_log.save_with_error(logger)
     except StoreScrapError as e:
