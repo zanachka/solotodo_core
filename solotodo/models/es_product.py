@@ -13,14 +13,6 @@ from .es_product_entities import EsProductEntities
 from django.conf import settings
 
 
-html_strip = analyzer(
-    "html_strip",
-    tokenizer="standard",
-    filter=["lowercase", "stop", "snowball"],
-    char_filter=["html_strip"],
-)
-
-
 class EsProduct(EsProductEntities):
     product_id = Integer()
     name = Keyword()
@@ -53,7 +45,6 @@ class EsProduct(EsProductEntities):
     metadata = Object(
         dynamic=True, properties={"source": Text(fields={"keyword": Keyword()})}
     )
-    description = Text(analyzer=html_strip)
 
     @classmethod
     def search(cls, **kwargs):
@@ -74,7 +65,7 @@ class EsProduct(EsProductEntities):
         if not es_document:
             es_document = product.instance_model.elasticsearch_document()
 
-        specs, keywords, related_instance_model_ids = es_document
+        specs, related_instance_model_ids = es_document
 
         if "default_bucket" not in specs:
             specs["default_bucket"] = specs["id"]
@@ -117,7 +108,6 @@ class EsProduct(EsProductEntities):
             instance_model_id=product.instance_model_id,
             creation_date=product.creation_date,
             last_updated=product.last_updated,
-            keywords=" ".join(keywords),
             specs=specs,
             related_instance_model_ids=related_instance_model_ids,
             product_relationships="product",

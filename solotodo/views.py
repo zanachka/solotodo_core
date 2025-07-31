@@ -1,3 +1,4 @@
+import mimetypes
 import traceback
 from collections import OrderedDict
 
@@ -10,7 +11,7 @@ from django.core.files.base import ContentFile
 from django.core.mail import send_mail
 from django.db import models, IntegrityError
 from django.db.models import Avg, Count, Min, Max
-from django.http import Http404, JsonResponse, HttpResponseRedirect
+from django.http import Http404, JsonResponse, HttpResponseRedirect, HttpResponse
 from django.utils import timezone
 from django_filters import rest_framework
 from elasticsearch_dsl import Search
@@ -1749,28 +1750,32 @@ class ProductViewSet(LoggingMixin, viewsets.ReadOnlyModelViewSet):
         if not form.is_valid():
             return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        specs = product.specs
-
-        if "picture" not in specs:
-            return Response(
-                {"detail": "No picture found for product"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        picture = specs["picture"]
-        thumbnail_kwargs = form.thumbnail_kwargs()
-
-        try:
-            resized_picture = get_thumbnail(picture, **thumbnail_kwargs)
-        except OSError:
-            # Probably trying to show an RGBA image in JPEG
-            del thumbnail_kwargs["format"]
-            resized_picture = get_thumbnail(picture, **thumbnail_kwargs)
+        resized_picture = form.product_thumbnail_url(product)
 
         response = Response(status=status.HTTP_302_FOUND)
         response["Location"] = resized_picture.url
         response["Cache-Control"] = "max-age=3600"
         return response
+
+    @action(detail=True)
+    def picture_file(self, request, pk):
+        product = self.get_object()
+
+        form = ProductPictureForm(request.query_params)
+
+        if not form.is_valid():
+            return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        thumb = form.product_thumbnail_url(product)
+
+        with thumb.storage.open(thumb.name, "rb") as f:
+            image_data = f.read()
+
+        # Guess MIME type
+        mime_type, _ = mimetypes.guess_type(thumb.name)
+        mime_type = mime_type or "image/jpeg"
+
+        return HttpResponse(image_data, content_type=mime_type)
 
     @action(detail=True)
     def average_rating(self, request, pk):

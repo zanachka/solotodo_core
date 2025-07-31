@@ -656,7 +656,6 @@ class InstanceModel(models.Model):
 
         result = {"id": self.id, "unicode": str(self)}
 
-        keywords = result["unicode"].split()
         related_instance_model_ids = []
 
         meta_fields = MetaModel.get_metafields_by_model_id(self.model_id)
@@ -683,8 +682,7 @@ class InstanceModel(models.Model):
                     m2m_document = m2m_instance_field.value.elasticsearch_document()
 
                     m2m_documents.append(m2m_document[0])
-                    keywords.extend(m2m_document[1])
-                    related_instance_model_ids.extend(m2m_document[2])
+                    related_instance_model_ids.extend(m2m_document[1])
 
                 result[meta_field.name] = m2m_documents
             else:
@@ -703,7 +701,6 @@ class InstanceModel(models.Model):
 
                     sanitized_value = sanitize_value(value)
                     result[meta_field.name] = sanitized_value
-                    keywords.append(str(sanitized_value))
                 elif instance_value:
                     fk_result = instance_value.elasticsearch_document()
                     for fk_key, fk_value in fk_result[0].items():
@@ -714,7 +711,6 @@ class InstanceModel(models.Model):
                         except TypeError:
                             pass
 
-                    keywords.extend(fk_result[1])
                     related_instance_model_ids.append(instance_value.id)
                     related_instance_model_ids.extend(fk_result[2])
 
@@ -728,7 +724,7 @@ class InstanceModel(models.Model):
             if additional_fields:
                 result.update(additional_fields)
 
-        return result, keywords, related_instance_model_ids
+        return result, related_instance_model_ids
 
     @staticmethod
     def elasticsearch_document_from_dict(instance_id, metamodel_dict):

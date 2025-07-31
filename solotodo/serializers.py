@@ -253,6 +253,12 @@ class CategorySpecsOrderSerializer(serializers.HyperlinkedModelSerializer):
 class ProductSerializer(serializers.HyperlinkedModelSerializer):
     name = serializers.CharField(read_only=True, source="__str__")
     slug = serializers.CharField(read_only=True)
+    description = serializers.CharField(
+        read_only=True, source="es_entry.ai_description"
+    )
+    meta_tag_description = serializers.CharField(
+        read_only=True, source="es_entry.ai_meta_tag_description"
+    )
     category = serializers.HyperlinkedRelatedField(
         view_name="category-detail", read_only=True, source="category.pk"
     )
@@ -273,8 +279,8 @@ class ProductSerializer(serializers.HyperlinkedModelSerializer):
             "part_number",
             "sec_qr_codes",
             "specs",
-            "keywords",
-            "ai_description",
+            "description",
+            "meta_tag_description",
         )
 
 

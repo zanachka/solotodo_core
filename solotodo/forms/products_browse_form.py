@@ -308,7 +308,7 @@ class ProductsBrowseForm(forms.Form):
                 keywords_query = Q(
                     "multi_match",
                     query=keywords,
-                    fields=["name_analyzed", "ai_description"],
+                    fields=["name_analyzed", "keywords"],
                     operator="and",
                     # Custom fuziness to distinguish some terms ("OLED" vs "LED")
                     fuzziness="AUTO:5,6",
@@ -318,7 +318,7 @@ class ProductsBrowseForm(forms.Form):
                 keywords_query = Q(
                     "multi_match",
                     query=keywords,
-                    fields=["name_analyzed", "ai_description"],
+                    fields=["name_analyzed", "keywords"],
                     # Custom fuziness to distinguish some terms ("OLED" vs "LED")
                     fuzziness="AUTO:5,6",
                 )
@@ -444,39 +444,36 @@ class ProductsBrowseForm(forms.Form):
         for hit in search_result["hits"]["hits"]:
             product_entries = []
             for inner_hit in hit["inner_hits"]["inner_products"]["hits"]["hits"]:
-                product = inner_hit["_source"]
-                product["id"] = product.pop("product_id")
-                product["url"] = reverse(
-                    "product-detail", args=[product["id"]], request=request
-                )
-                product["category"] = reverse(
-                    "category-detail", args=[product["category_id"]], request=request
-                )
-                product["slug"] = slugify(product["name"])
-                picture_path = product["specs"].get("picture", None)
+                raw_product = inner_hit["_source"]
+                picture_path = raw_product["specs"].get("picture", None)
 
                 if picture_path:
                     picture_url = default_storage.url(picture_path)
                 else:
                     picture_url = None
 
-                product["picture_url"] = picture_url
-
-                for key in [
-                    "category_id",
-                    "category_name",
-                    "product_relationships",
-                    "vector",
-                    "search_vector",
-                    "related_instance_model_ids",
-                    "text",
-                    "ai_description",
-                    "ai_meta_tag_description",
-                ]:
-                    try:
-                        del product[key]
-                    except KeyError:
-                        pass
+                product = {
+                    "id": raw_product["product_id"],
+                    "name": raw_product["name"],
+                    "instance_model_id": raw_product["instance_model_id"],
+                    "creation_date": raw_product["creation_date"],
+                    "last_updated": raw_product["last_updated"],
+                    "specs": raw_product["specs"],
+                    "description": raw_product["ai_description"],
+                    "meta_tag_description": raw_product["ai_meta_tag_description"],
+                    "url": reverse(
+                        "product-detail",
+                        args=[raw_product["product_id"]],
+                        request=request,
+                    ),
+                    "category": reverse(
+                        "category-detail",
+                        args=[raw_product["category_id"]],
+                        request=request,
+                    ),
+                    "slug": slugify(raw_product["name"]),
+                    "picture_url": picture_url,
+                }
 
                 product_metadata = product_metadata_dict.get(product["id"], None)
 

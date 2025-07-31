@@ -687,13 +687,45 @@ Descripción del producto:
 
         return seo_description.content
 
-    def update_ai_descriptions(self):
-        ai_description = self.ai_generate_description()
+    def ai_generate_keywords(self):
+        from django.conf import settings
 
+        tagging_prompt = ChatPromptTemplate.from_template(
+            """
+            A partir de la siguiente descripción de producto, genera una lista de palabras clave relevantes que 
+            serán usadas para búsqueda por keywords dentro de un sitio web. Incluye tanto los términos explícitamente 
+            mencionados como sinónimos (por ejemplo si aparece "juegos" incluye 
+            tambien "gamer" y "gaming"). Separa cada keyword con coma. Sólo retorna el texto final, sin comentarios.
+
+Descripción del producto:
+{input}
+
+Ejemplo de salida:
+palabra1, palabra2, sinónimo1, sinónimo2, palabra relacionada1, etc.
+            """
+        )
+
+        # self.es_entry may be cached, so get a fresh instance of the related EsProduct
         es_product = EsProduct.get_by_product_id(self.pk)
-        es_product.ai_description = ai_description
-        es_product.ai_meta_tag_description = self.ai_generate_meta_tag_description()
-        es_product.save()
+        joined_descriptions = f"{self.ai_specs}\n{es_product.ai_description}"
+
+        prompt = tagging_prompt.invoke({"input": joined_descriptions})
+        seo_description = settings.OPENAI_LLM.invoke(prompt)
+
+        return seo_description.content
+
+    def update_ai_fields(self, fields=None):
+        es_product = EsProduct.get_by_product_id(self.pk)
+
+        if fields is None or "ai_description" in fields:
+            es_product.ai_description = self.ai_generate_description()
+            es_product.save()
+        if fields is None or "ai_meta_tag_description" in fields:
+            es_product.ai_meta_tag_description = self.ai_generate_meta_tag_description()
+            es_product.save()
+        if fields is None or "keywords" in fields:
+            es_product.keywords = self.ai_generate_keywords()
+            es_product.save()
 
     class Meta:
         app_label = "solotodo"
