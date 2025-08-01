@@ -656,9 +656,9 @@ class Product(models.Model):
         descriptions = [
             e.description for e in self.entity_set.filter(description__isnull=False)
         ]
-        input = f"{self.ai_specs}\n\n{".\n\n".join(descriptions)}"
+        prompt_input = json.dumps(self.ai_specs) + "\n\n" + "\n\n".join(descriptions)
 
-        prompt = tagging_prompt.invoke({"input": input})
+        prompt = tagging_prompt.invoke({"input": prompt_input})
         seo_description = settings.OPENAI_LLM.invoke(prompt)
 
         return seo_description.content
@@ -680,7 +680,9 @@ Descripción del producto:
         descriptions = [
             e.description for e in self.entity_set.filter(description__isnull=False)
         ]
-        joined_descriptions = f"{self.ai_specs}\n\n{".\n\n".join(descriptions)}"
+        joined_descriptions = (
+            json.dumps(self.ai_specs) + "\n\n" + "\n\n".join(descriptions)
+        )
 
         prompt = tagging_prompt.invoke({"input": joined_descriptions})
         seo_description = settings.OPENAI_LLM.invoke(prompt)
@@ -707,7 +709,9 @@ palabra1, palabra2, sinónimo1, sinónimo2, palabra relacionada1, etc.
 
         # self.es_entry may be cached, so get a fresh instance of the related EsProduct
         es_product = EsProduct.get_by_product_id(self.pk)
-        joined_descriptions = f"{self.ai_specs}\n{es_product.ai_description}"
+        joined_descriptions = (
+            f"{json.dumps(self.ai_specs)}\n{es_product.ai_description}"
+        )
 
         prompt = tagging_prompt.invoke({"input": joined_descriptions})
         keywords = settings.OPENAI_LLM.invoke(prompt).content
