@@ -67,7 +67,6 @@ from solotodo.forms.entity_dissociation_form import EntityDisssociationForm
 from solotodo.forms.entity_estimated_sales_form import EntityEstimatedSalesForm
 from solotodo.forms.product_analytics_form import ProductAnalyticsForm
 from solotodo.forms.products_browse_form import ProductsBrowseForm
-from solotodo.forms.ai_products_browse_form import AIProductsBrowseForm
 from solotodo.forms.lead_grouping_form import LeadGroupingForm
 from solotodo.forms.ip_form import IpForm
 from solotodo.forms.category_form import CategoryForm
@@ -469,7 +468,12 @@ class CategoryViewSet(PermissionReadOnlyModelViewSet):
     @action(detail=True)
     def browse(self, request, pk, *args, **kwargs):
         category = self.get_object()
-        form = ProductsBrowseForm(request.user, request.query_params)
+
+        params = request.query_params.copy()
+        if "ordering" not in params:
+            params["ordering"] = "leads"
+
+        form = ProductsBrowseForm(request.user, params)
 
         if not form.is_valid():
             return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -1511,16 +1515,6 @@ class ProductViewSet(LoggingMixin, viewsets.ReadOnlyModelViewSet):
             params["ordering"] = "relevance"
 
         form = ProductsBrowseForm(request.user, params)
-
-        if not form.is_valid():
-            return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        result = form.get_category_products(request)
-        return Response(result)
-
-    @action(detail=False)
-    def ai_browse(self, request, *args, **kwargs):
-        form = AIProductsBrowseForm(request.user, request.query_params)
 
         if not form.is_valid():
             return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)

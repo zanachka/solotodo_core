@@ -87,11 +87,14 @@ def update_related_products(instance_model, created, creator_id, **kwargs):
 
 @receiver(product_saved)
 def update_product_in_es(product, es_document, **kwargs):
+    from solotodo.tasks import ai_update_product_fields
+
     try:
         existing_elasticsearch_document = EsProduct.get_by_product_id(product.id)
     except NotFoundError:
         existing_elasticsearch_document = None
     EsProduct.from_product(product, es_document, existing_elasticsearch_document).save()
+    ai_update_product_fields.delay(product.id)
 
 
 @receiver(post_delete, sender=Product)

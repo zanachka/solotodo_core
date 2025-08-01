@@ -591,6 +591,8 @@ class Entity(models.Model):
         )
 
     def associate(self, user, product, cell_plan=None, bundle=None):
+        from solotodo.tasks import ai_update_product_fields
+
         if not self.is_visible:
             raise IntegrityError("Non-visible cannot be associated")
 
@@ -622,9 +624,17 @@ class Entity(models.Model):
             "bundle": bundle,
         }
 
+        old_product = self.product
         self.update_keeping_log(update_dict, user)
 
+        if old_product:
+            ai_update_product_fields.delay(old_product.id)
+
+        ai_update_product_fields.delay(product.id)
+
     def dissociate(self, user, reason=None):
+        from solotodo.tasks import ai_update_product_fields
+
         if not self.product:
             raise IntegrityError("Cannot dissociate non-associated entity")
         if reason and self.last_association_user == user:
@@ -644,7 +654,9 @@ class Entity(models.Model):
         if reason:
             self.last_association_user.send_entity_dissociation_mail(self, user, reason)
 
+        old_product = self.product
         self.update_keeping_log(update_dict, user)
+        ai_update_product_fields.delay(old_product.id)
 
     def associate_related_cell_entities(self, user):
         from django.conf import settings
