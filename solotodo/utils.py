@@ -1,4 +1,5 @@
 import collections
+import hashlib
 import re
 from decimal import Decimal
 
@@ -113,3 +114,7 @@ def fetch_sec_fields(qr_code):
         value = label.next.next.next.strip()
         d[key] = value
     return d
+
+
+def sha256(value):
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()

@@ -21,6 +21,10 @@ from solotodo.models import (
 )
 from storescraper.store import StoreScrapError
 
+from solotodo.utils import sha256
+
+MAX_RETRIES = 400
+
 
 @shared_task(queue="general", ignore_result=True)
 def product_save(product_id):
@@ -142,6 +146,7 @@ def ai_entity_update_category(entity_id):
     bind=True,
     queue="storescraper",
     ignore_result=True,
+    max_retries=MAX_RETRIES,
 )
 def store_category_update_pricing(
     self,
@@ -173,14 +178,13 @@ def store_category_update_pricing(
             )
     except ConcurrencyLimitReached as e:
         cache_key = f"store_category_update_pricing:ConcurrencyLimitReached:{update_log.id}:{category.storescraper_name}"
-        limit = 300
 
         try:
-            with memcached_retry_tracker(cache_key, limit):
-                raise self.retry(exc=e, countdown=3, max_retries=limit)
+            with memcached_retry_tracker(cache_key, MAX_RETRIES):
+                raise self.retry(exc=e, countdown=3)
         except RetryLimitExceeded:
             update_log.save_with_error(logger)
-            raise
+
     except StoreScrapError as e:
         payload = {
             "message": f"Error: {e}",
@@ -191,21 +195,18 @@ def store_category_update_pricing(
 
         try:
             with memcached_retry_tracker(cache_key, limit):
-                update_log.decrement_task_counter()
                 logger.warning(json.dumps(payload))
-                raise self.retry(exc=e, countdown=10, max_retries=limit)
+                raise self.retry(exc=e, countdown=10)
         except RetryLimitExceeded:
+            update_log.decrement_task_counter()
             update_log.save_with_error(logger)
-            raise
-    except Exception as e:
+    except Exception:
+        update_log.decrement_task_counter()
         update_log.save_with_error(logger)
-        raise
 
 
 @shared_task(
-    bind=True,
-    queue="storescraper",
-    ignore_result=True,
+    bind=True, queue="storescraper", ignore_result=True, max_retries=MAX_RETRIES
 )
 def store_create_or_update_entity_from_discovery_url(
     self,
@@ -231,40 +232,40 @@ def store_create_or_update_entity_from_discovery_url(
                 update_log, discovery_url, category, extra_args
             )
     except ConcurrencyLimitReached as e:
-        cache_key = f"store_create_or_update_entity_from_discovery_url:ConcurrencyLimitReached:{update_log_id}:{hash(discovery_url)}"
-        limit = 300
+        cache_key = f"store_create_or_update_entity_from_discovery_url:ConcurrencyLimitReached:{update_log_id}:{sha256(discovery_url)}"
 
         try:
-            with memcached_retry_tracker(cache_key, limit):
-                raise self.retry(exc=e, countdown=3, max_retries=limit)
+            with memcached_retry_tracker(cache_key, MAX_RETRIES):
+                raise self.retry(exc=e, countdown=3, max_retries=MAX_RETRIES)
         except RetryLimitExceeded:
-            update_log.save_with_error(logger)
-            raise
+            update_log.save_with_error(logger, discovery_url)
     except StoreScrapError as e:
-        payload = {
-            "message": f"Error: {e}",
-            "update_log_id": update_log.id,
-        }
-        cache_key = f"store_create_or_update_entity_from_discovery_url:StoreScrapError:{update_log_id}:{hash(discovery_url)}"
+        cache_key = f"store_create_or_update_entity_from_discovery_url:StoreScrapError:{update_log_id}:{sha256(discovery_url)}"
         limit = 5
 
         try:
-            with memcached_retry_tracker(cache_key, limit):
-                update_log.decrement_task_counter()
+            with memcached_retry_tracker(cache_key, limit) as tracker:
+                payload = {
+                    "message": f"Error: {e}, Current: {tracker}",
+                    "update_log_id": update_log.id,
+                    "current": tracker,
+                    "discovery_url": discovery_url,
+                }
                 logger.warning(json.dumps(payload))
-                raise self.retry(exc=e, countdown=10, max_retries=limit)
+                raise self.retry(exc=e, countdown=10)
         except RetryLimitExceeded:
-            update_log.save_with_error(logger)
-            raise
-    except Exception as e:
-        update_log.save_with_error(logger)
-        raise
+            update_log.decrement_task_counter()
+            update_log.save_with_error(logger, discovery_url)
+    except Exception:
+        update_log.decrement_task_counter()
+        update_log.save_with_error(logger, discovery_url)
 
 
 @shared_task(
     bind=True,
     queue="storescraper",
     ignore_result=True,
+    max_retries=MAX_RETRIES,
 )
 def store_update_individual_section_positions(
     self,
@@ -292,29 +293,26 @@ def store_update_individual_section_positions(
                 extra_args,
             )
     except ConcurrencyLimitReached as e:
-        cache_key = f"store_update_individual_section_positions:ConcurrencyLimitReached:{update_log.id}:{hash(section)}"
-        limit = 500
+        cache_key = f"store_update_individual_section_positions:ConcurrencyLimitReached:{update_log.id}:{sha256(section)}"
 
         try:
-            with memcached_retry_tracker(cache_key, limit):
-                raise self.retry(exc=e, countdown=3, max_retries=limit)
+            with memcached_retry_tracker(cache_key, MAX_RETRIES):
+                raise self.retry(exc=e, countdown=20)
         except RetryLimitExceeded:
             update_log.save_with_error(logger)
-            raise
     except StoreScrapError as e:
-        cache_key = f"store_update_individual_section_positions:StoreScrapError:{update_log.id}:{hash(section)}"
+        cache_key = f"store_update_individual_section_positions:StoreScrapError:{update_log.id}:{sha256(section)}"
         limit = 5
 
         try:
             with memcached_retry_tracker(cache_key, limit):
-                update_log.decrement_task_counter()
-                raise self.retry(exc=e, countdown=10, max_retries=limit)
+                raise self.retry(exc=e, countdown=10)
         except RetryLimitExceeded:
+            update_log.decrement_task_counter()
             update_log.save_with_error(logger)
-            raise
-    except Exception as e:
+    except Exception:
+        update_log.decrement_task_counter()
         update_log.save_with_error(logger)
-        raise
 
 
 @shared_task(queue="ai", ignore_result=True, max_retries=3, countdown=3)

@@ -490,6 +490,7 @@ class Store(models.Model):
                     entity.scraped_categories.add(category)
             else:
                 update_log.increment_task_counter()
+
                 if use_async:
                     store_create_or_update_entity_from_discovery_url.delay(
                         self.id,
@@ -660,7 +661,7 @@ class Store(models.Model):
         update_log,
         extra_args,
     ):
-        from solotodo.models import StoreSection, EntitySectionPosition
+        from solotodo.models import StoreSection, EntitySectionPosition, Entity
 
         logger = logging.getLogger("logstash")
         logging_payload = {
@@ -682,7 +683,20 @@ class Store(models.Model):
                 sections_dict[section_position["section"]] = store_section
 
             entities_filter = {section_position["field"]: section_position["value"]}
-            entities_for_update = self.entity_set.get_active().filter(**entities_filter)
+
+            # For the case of Falabella, use this info to also update the positioning of Falabella Marketplace
+            if self.name == "Falabella":
+                matching_stores = Store.objects.filter(
+                    name__in=["Falabella", "Falabella Marketplace"]
+                )
+            else:
+                matching_stores = [self]
+
+            entities_for_update = (
+                Entity.objects.get_active()
+                .filter(**entities_filter)
+                .filter(store__in=matching_stores)
+            )
             for entity in entities_for_update:
                 logger.info(
                     json.dumps(
@@ -696,6 +710,7 @@ class Store(models.Model):
                     entity_history=entity.active_registry,
                     section=store_section,
                     value=section_position["position"],
+                    is_sponsored=section_position["is_sponsored"],
                 )
         update_log.decrement_task_counter()
 

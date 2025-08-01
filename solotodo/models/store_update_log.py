@@ -70,6 +70,7 @@ class StoreUpdateLog(models.Model):
 
     def decrement_task_counter(self):
         new_val = cache.decr(self._caching_key())
+
         if new_val == 0:
             logger = logging.getLogger("logstash")
             logger.info(
@@ -90,12 +91,13 @@ class StoreUpdateLog(models.Model):
                 )
                 self.save()
 
-    def save_with_error(self, logger):
+    def save_with_error(self, logger, discovery_url=None):
         self.status = self.ERROR
         self.save()
         payload = {
             "message": f"Error: {traceback.format_exc()}",
             "update_log_id": self.id,
+            "discovery_url": discovery_url,
         }
         logger.error(json.dumps(payload))
 
