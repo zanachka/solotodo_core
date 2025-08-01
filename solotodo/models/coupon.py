@@ -49,12 +49,12 @@ class Coupon(models.Model):
         # Hardcoded logic for LG coupon, delete this once the coupon with the given ID no longer exists
         if self.id == 2080:
             blacklisted_skus = [
-                # "GS66SXTC.AMCPECL.ESCL.CL.C",
-                # "GS66WPP.APZPECL.ESCL.CL.C",
-                # "WD12VVC4S6C.APTPECL.ESCL.CL.C",
-                # "WK14BS6.APBPECL.ESCL.CL.C",
-                # "WK22BS6.ABLPECL.ESCL.CL.C",
-                # "WT19MPB.ABMPECL.ESCL.CL.C",
+                "GS66SXTC.AMCPECL.ESCL.CL.C",
+                "GS66WPP.APZPECL.ESCL.CL.C",
+                "WD12VVC4S6C.APTPECL.ESCL.CL.C",
+                "WK14BS6.APBPECL.ESCL.CL.C",
+                "WK22BS6.ABLPECL.ESCL.CL.C",
+                "WT19MPB.ABMPECL.ESCL.CL.C",
             ]
             es = es.exclude(sku__in=blacklisted_skus)
 
