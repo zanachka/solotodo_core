@@ -3,8 +3,6 @@ from django.contrib.auth.models import Group
 from django.db.models.signals import post_save, post_delete, m2m_changed
 from django.dispatch import receiver
 from django.utils import timezone
-from django.db.models import Lookup
-from django.db.models.fields import Field
 from elasticsearch import NotFoundError, ConflictError
 
 from rest_framework.authtoken.models import Token
@@ -89,7 +87,11 @@ def update_related_products(instance_model, created, creator_id, **kwargs):
 
 @receiver(product_saved)
 def update_product_in_es(product, es_document, **kwargs):
-    EsProduct.from_product(product, es_document).save()
+    try:
+        existing_elasticsearch_document = EsProduct.get_by_product_id(product.id)
+    except NotFoundError:
+        existing_elasticsearch_document = None
+    EsProduct.from_product(product, es_document, existing_elasticsearch_document).save()
 
 
 @receiver(post_delete, sender=Product)

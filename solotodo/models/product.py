@@ -634,22 +634,22 @@ class Product(models.Model):
 
 - [Característica 1]
 - [Característica 2]
-- [Característica 3]
-... etcétera
+...
+- [Característica n]
 
 ## Pros
 
 - [Pro 1]
 - [Pro 2]
-- [Pro 3]
-... etcétera
+...
+- [Pro n]
 
 ## Contras
 
 - [Contra 1]
 - [Contra 2]
-- [Contra 3]
-... etcétera
+...
+- [Contra n]
             """
         )
 
@@ -710,9 +710,14 @@ palabra1, palabra2, sinónimo1, sinónimo2, palabra relacionada1, etc.
         joined_descriptions = f"{self.ai_specs}\n{es_product.ai_description}"
 
         prompt = tagging_prompt.invoke({"input": joined_descriptions})
-        seo_description = settings.OPENAI_LLM.invoke(prompt)
+        keywords = settings.OPENAI_LLM.invoke(prompt).content
+        keywords += f", {str(self)}, {self.id}"
 
-        return seo_description.content
+        for instance_field in self.instance_model.fields.all():
+            if not instance_field.field.model.is_primitive():
+                keywords += f", {instance_field.value}"
+
+        return keywords
 
     def update_ai_fields(self, fields=None):
         es_product = EsProduct.get_by_product_id(self.pk)

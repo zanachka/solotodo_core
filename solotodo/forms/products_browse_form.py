@@ -459,8 +459,10 @@ class ProductsBrowseForm(forms.Form):
                     "creation_date": raw_product["creation_date"],
                     "last_updated": raw_product["last_updated"],
                     "specs": raw_product["specs"],
-                    "description": raw_product["ai_description"],
-                    "meta_tag_description": raw_product["ai_meta_tag_description"],
+                    "description": raw_product.get("ai_description", None),
+                    "meta_tag_description": raw_product.get(
+                        "ai_meta_tag_description", None
+                    ),
                     "url": reverse(
                         "product-detail",
                         args=[raw_product["product_id"]],

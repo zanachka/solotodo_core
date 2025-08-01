@@ -119,7 +119,7 @@ def update_entity_sec_qr_codes(entity_id):
 
 
 @shared_task(
-    queue="ai",
+    queue="general",
     ignore_result=True,
     autoretry_for=(Exception,),
     max_retries=2,
@@ -131,7 +131,7 @@ def ai_associate_entity(entity_id):
 
 
 @shared_task(
-    queue="ai",
+    queue="general",
     ignore_result=True,
     autoretry_for=(Exception,),
     max_retries=2,
@@ -315,7 +315,7 @@ def store_update_individual_section_positions(
         update_log.save_with_error(logger)
 
 
-@shared_task(queue="ai", ignore_result=True, max_retries=3, countdown=3)
+@shared_task(queue="general", ignore_result=True, max_retries=3, countdown=3)
 def ai_update_product_fields(product_id, fields=None):
     product = Product.objects.get(pk=product_id)
     product.update_ai_fields(fields)

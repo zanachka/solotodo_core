@@ -1,13 +1,5 @@
 import json
-from elasticsearch_dsl import (
-    Text,
-    Keyword,
-    Object,
-    Integer,
-    Date,
-    DenseVector,
-    analyzer,
-)
+from elasticsearch_dsl import Text, Keyword, Object, Integer, Date, DenseVector
 from .es_product_entities import EsProductEntities
 
 from django.conf import settings
@@ -39,8 +31,8 @@ class EsProduct(EsProductEntities):
         index_options={"type": "int8_hnsw", "m": 16, "ef_construction": 100},
     )
 
-    ai_description = Text(fields={"keyword": Keyword()})
-    ai_meta_tag_description = Text(fields={"keyword": Keyword()})
+    ai_description = Text()
+    ai_meta_tag_description = Text()
 
     metadata = Object(
         dynamic=True, properties={"source": Text(fields={"keyword": Keyword()})}
@@ -61,7 +53,7 @@ class EsProduct(EsProductEntities):
         return cls.get("PRODUCT_{}".format(product_id))
 
     @classmethod
-    def from_product(cls, product, es_document=None):
+    def from_product(cls, product, es_document=None, elasticsearch_document=None):
         if not es_document:
             es_document = product.instance_model.elasticsearch_document()
 
@@ -83,12 +75,6 @@ class EsProduct(EsProductEntities):
             )
         specs_content = json.dumps(document_content, sort_keys=True)
 
-        description = "\n".join(
-            [f"{key}: {value}" for key, value in document_content.items()]
-        )
-        for entity in product.entity_set.filter(description__isnull=False):
-            description += "\n" + entity.description
-
         vector = settings.VECTOR_STORE.embedding.embed_documents([specs_content])[0]
 
         metadata = {
@@ -96,24 +82,26 @@ class EsProduct(EsProductEntities):
             "category_id": product.category_id,
         }
 
-        return cls(
-            product_id=product.id,
-            name=str(product),
-            name_analyzed=str(product),
-            category_id=product.category_id,
-            category_name=str(product.category),
-            brand_id=product.brand_id,
-            brand_name=str(product.brand),
-            part_number=product.part_number,
-            instance_model_id=product.instance_model_id,
-            creation_date=product.creation_date,
-            last_updated=product.last_updated,
-            specs=specs,
-            related_instance_model_ids=related_instance_model_ids,
-            product_relationships="product",
-            meta={"id": "PRODUCT_{}".format(product.id)},
-            text=specs_content,
-            vector=vector,
-            metadata=metadata,
-            description=description,
-        )
+        if not elasticsearch_document:
+            elasticsearch_document = cls(
+                meta={"id": "PRODUCT_{}".format(product.id)}, keywords=specs_content
+            )
+
+        elasticsearch_document.product_id = product.id
+        elasticsearch_document.name = str(product)
+        elasticsearch_document.name_analyzed = str(product)
+        elasticsearch_document.category_id = product.category_id
+        elasticsearch_document.category_name = str(product.category)
+        elasticsearch_document.brand_id = product.brand_id
+        elasticsearch_document.brand_name = str(product.brand)
+        elasticsearch_document.part_number = str(product.part_number)
+        elasticsearch_document.instance_model_id = product.instance_model_id
+        elasticsearch_document.creation_date = product.creation_date
+        elasticsearch_document.last_updated = product.last_updated
+        elasticsearch_document.specs = specs
+        elasticsearch_document.related_instance_model_ids = related_instance_model_ids
+        elasticsearch_document.product_relationships = "product"
+        elasticsearch_document.vector = vector
+        elasticsearch_document.metadata = metadata
+
+        return elasticsearch_document

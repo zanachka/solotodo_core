@@ -712,7 +712,7 @@ class InstanceModel(models.Model):
                             pass
 
                     related_instance_model_ids.append(instance_value.id)
-                    related_instance_model_ids.extend(fk_result[2])
+                    related_instance_model_ids.extend(fk_result[1])
 
         for function_path in settings.METAMODEL[
             "ADDITIONAL_ELASTICSEARCH_FIELDS_FUNCTIONS"

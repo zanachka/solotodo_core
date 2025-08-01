@@ -1024,7 +1024,7 @@ class Entity(models.Model):
                     "score_threshold": 0.5,
                     "filter": [
                         {"term": {"product_relationships": "product"}},
-                        {"term": {"metadata.category_id": self.category_id}},
+                        {"term": {"category_id": self.category_id}},
                     ],
                 },
             ),
