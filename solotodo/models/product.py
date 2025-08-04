@@ -157,7 +157,7 @@ class Product(models.Model):
             if field_type == "DecimalField":
                 specs[field_name] = float(field_value.decimal_value)
             elif field_type == "BooleanField":
-                specs[field_name] = "Yes" if field_value.unicode_value else "No"
+                specs[field_name] = "Yes" if field_value.decimal_value else "No"
             else:
                 specs[field_name] = (
                     field_value.unicode_representation
