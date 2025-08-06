@@ -83,9 +83,8 @@ class EsProduct(EsProductEntities):
         }
 
         if not elasticsearch_document:
-            elasticsearch_document = cls(
-                meta={"id": "PRODUCT_{}".format(product.id)}, keywords=specs_content
-            )
+            elasticsearch_document = cls(meta={"id": "PRODUCT_{}".format(product.id)})
+            elasticsearch_document.keywords = specs_content
 
         elasticsearch_document.product_id = product.id
         elasticsearch_document.name = str(product)
