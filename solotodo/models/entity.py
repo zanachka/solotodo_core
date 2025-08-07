@@ -3,7 +3,6 @@ import json
 import re
 
 import rapidfuzz
-import time
 import urllib
 from decimal import Decimal
 from enum import Enum
@@ -31,7 +30,7 @@ from .store import Store
 from .bundle import Bundle
 from .coupon import Coupon
 from .es_product import EsProduct
-from solotodo.utils import iterable_to_dict, fetch_sec_fields
+from solotodo.utils import iterable_to_dict, fetch_sec_fields, get_llm
 from solotodo_core.s3utils import MediaRootS3Boto3Storage
 from metamodel.models import InstanceModel
 
@@ -821,7 +820,7 @@ class Entity(models.Model):
 
         return json.dumps(data)
 
-    def ai_infer_category(self):
+    def ai_infer_category(self, llm_model=None):
         tagging_prompt = ChatPromptTemplate.from_template(
             """
             Determine what category the product corresponds to based on its characteristics:
@@ -836,7 +835,7 @@ class Entity(models.Model):
         Classification = create_model(
             "Classification", category=(Union[enum, str], field_data)
         )
-        llm = settings.LLM.with_structured_output(Classification)
+        llm = get_llm(llm_model).with_structured_output(Classification)
         prompt = tagging_prompt.invoke({"input": self.ai_get_input()})
         infered_category = llm.invoke(prompt).category
 
@@ -847,7 +846,7 @@ class Entity(models.Model):
 
         return Category.objects.get(name=infered_category)
 
-    def ai_infer_product_data(self):
+    def ai_infer_product_data(self, llm_model=None):
         errors = {}
         if not self.description:
             errors["general"] = "The entity does not have a description"
@@ -860,9 +859,21 @@ class Entity(models.Model):
             {input}
             """
         )
-        fields_annotation, fields_enum_choices = self.category.get_fields_annotation()
+
+        llm = get_llm(llm_model)
+        llm_name = llm.get_name()
+        if "OpenAI" in llm_name:
+            fields_annotation, fields_enum_choices = (
+                self.category.get_openai_fields_annotation()
+            )
+        elif "Anthropic" in llm_name:
+            fields_annotation, fields_enum_choices = (
+                self.category.get_anthropic_fields_annotation()
+            )
+        else:
+            raise Exception("Unsupported LLM model")
         Classification = create_model("Classification", **fields_annotation)
-        llm = settings.LLM.with_structured_output(Classification)
+        llm = llm.with_structured_output(Classification)
         prompt = tagging_prompt.invoke({"input": self.ai_get_input()})
         try:
             response = dict(llm.invoke(prompt))
@@ -924,10 +935,14 @@ class Entity(models.Model):
         return response, errors
 
     def ai_create_product(
-        self, inferred_product_data=None, ignore_errors=False, creator=None
+        self,
+        inferred_product_data=None,
+        ignore_errors=False,
+        creator=None,
+        llm_model=None,
     ):
         if not inferred_product_data:
-            inferred_product_data, errors = self.ai_infer_product_data()
+            inferred_product_data, errors = self.ai_infer_product_data(llm_model)
             if errors and not ignore_errors:
                 raise Exception("The AI inferred product data has errors")
 
@@ -1005,9 +1020,11 @@ class Entity(models.Model):
 
         return file_url.split(f"{MediaRootS3Boto3Storage.location}/")[-1]
 
-    def ai_find_similar_products(self, inferred_product_data=None):
+    def ai_find_similar_products(self, inferred_product_data=None, llm_model=None):
         if not inferred_product_data:
-            inferred_product_data, errors = self.ai_infer_product_data()
+            inferred_product_data, errors = self.ai_infer_product_data(
+                llm_model=llm_model
+            )
             if errors:
                 errors_text = ", ".join(
                     [f"{key}: {value}" for key, value in errors.items()]
@@ -1026,7 +1043,7 @@ class Entity(models.Model):
             ]
         )
         combine_docs_chain = create_stuff_documents_chain(
-            settings.LLM, retrieval_qa_chat_prompt
+            get_llm(llm_model), retrieval_qa_chat_prompt
         )
         retrieval_chain = create_retrieval_chain(
             settings.VECTOR_STORE.as_retriever(
@@ -1088,13 +1105,13 @@ class Entity(models.Model):
 
         return result
 
-    def ai_associate(self, user=None):
-        result = self._ai_associate(user=user)
+    def ai_associate(self, user=None, llm_model=None):
+        result = self._ai_associate(user=user, llm_model=llm_model)
         self.ai_association_result = result
         self.save()
         return result
 
-    def _ai_associate(self, user=None):
+    def _ai_associate(self, user=None, llm_model=None):
         if not self.is_visible:
             raise Exception("Entity has been marked as non-relevant")
 
@@ -1109,7 +1126,7 @@ class Entity(models.Model):
             "errors": None,
         }
 
-        inferred_product_data, errors = self.ai_infer_product_data()
+        inferred_product_data, errors = self.ai_infer_product_data(llm_model=llm_model)
         result["inferred_product_data"] = inferred_product_data
         if errors:
             result["errors"] = errors
@@ -1117,7 +1134,7 @@ class Entity(models.Model):
 
         try:
             ai_similar_products_data = self.ai_find_similar_products(
-                inferred_product_data
+                inferred_product_data, llm_model=llm_model
             )
         except Exception as e:
             result["errors"] = {"general": str(e)}
@@ -1144,19 +1161,21 @@ class Entity(models.Model):
             result["associated_product_id"] = ai_similar_products_data[0]["product"].id
             result["product_created"] = False
         else:
-            product = self.ai_create_product(inferred_product_data, creator=user)
+            product = self.ai_create_product(
+                inferred_product_data, creator=user, llm_model=llm_model
+            )
             self.associate(SoloTodoUser.get_bot(), product)
             result["associated_product_id"] = product.id
             result["product_created"] = True
         return result
 
-    def ai_update_category(self):
+    def ai_update_category(self, llm_model=None):
         if self.product_id:
             raise Exception(
                 "Associated entities cannot change their category, please dissociate it first"
             )
 
-        ai_category = self.ai_infer_category()
+        ai_category = self.ai_infer_category(llm_model)
 
         if ai_category != self.category:
             self.category = ai_category

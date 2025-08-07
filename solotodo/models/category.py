@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Union, Type
+from typing import Union, Type, Literal, List, Optional
 from pydantic import Field
 
 from django.contrib.auth.models import Group
@@ -101,7 +101,7 @@ class Category(models.Model):
 
         return form_class
 
-    def get_fields_annotation(self):
+    def get_anthropic_fields_annotation(self):
         fields_annotation = {}
         fields_enum_choices = {}
         field_types = {
@@ -148,6 +148,63 @@ class Category(models.Model):
                     field_type,
                     field_data,
                 )
+
+        if "commercial_model" not in fields_annotation:
+            fields_annotation["commercial_model"] = (
+                str,
+                Field(description="Modelo comercial, sin incluir marca"),
+            )
+        if "brand" not in fields_annotation:
+            fields_annotation["brand"] = (
+                str,
+                Field(description="Marca del producto"),
+            )
+
+        return fields_annotation, fields_enum_choices
+
+    def get_openai_fields_annotation(self):
+        fields_annotation = {}
+        fields_enum_choices = {}
+        field_types = {
+            "CharField": str,
+            "IntegerField": int,
+            "BooleanField": bool,
+            "DecimalField": float,
+        }
+
+        for field in self.meta_model.fields.all():
+            model_name = field.model.name
+            field_data = Field(description=field.help_text or "")
+
+            if field.nullable:
+                field_data.default = None
+
+            if model_name == "FileField":
+                continue
+
+            if field.model.is_primitive():
+                field_type = field_types[model_name]
+            else:
+                enum_choices = list(
+                    field.model.instancemodel_set.all().values_list(
+                        "unicode_representation", flat=True
+                    )
+                )
+                field_type = Literal.__getitem__(
+                    tuple([x.replace('"', "'") for x in enum_choices])
+                )
+                fields_enum_choices[field.name] = enum_choices
+
+            if field.multiple:
+                field_type = List.__getitem__(field_type)
+
+            if field.nullable:
+                field_type = Optional.__getitem__(field_type)
+
+            fields_annotation[field.name] = (
+                field_type,
+                field_data,
+            )
 
         if "commercial_model" not in fields_annotation:
             fields_annotation["commercial_model"] = (

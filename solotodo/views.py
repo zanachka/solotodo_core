@@ -65,6 +65,7 @@ from solotodo.forms.entity_ai_create_product_form import (
 )
 from solotodo.forms.entity_dissociation_form import EntityDisssociationForm
 from solotodo.forms.entity_estimated_sales_form import EntityEstimatedSalesForm
+from solotodo.forms.llm_model_form import LlmModelForm
 from solotodo.forms.product_analytics_form import ProductAnalyticsForm
 from solotodo.forms.products_browse_form import ProductsBrowseForm
 from solotodo.forms.lead_grouping_form import LeadGroupingForm
@@ -1317,8 +1318,14 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
         if not entity.user_has_staff_perms(request.user):
             raise PermissionDenied
 
+        form = LlmModelForm(request.GET)
+        if not form.is_valid():
+            return JsonResponse(form.errors, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            similar_products = entity.ai_find_similar_products()
+            similar_products = entity.ai_find_similar_products(
+                llm_model=form.cleaned_data["llm_model"]
+            )
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1331,8 +1338,12 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
         if not entity.user_has_staff_perms(request.user):
             raise PermissionDenied
 
+        form = LlmModelForm(request.data)
+        if not form.is_valid():
+            return JsonResponse(form.errors, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            entity.ai_update_category()
+            entity.ai_update_category(llm_model=form.cleaned_data["llm_model"])
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1345,8 +1356,14 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
         if not entity.user_has_staff_perms(request.user):
             raise PermissionDenied
 
+        form = LlmModelForm(request.data)
+        if not form.is_valid():
+            return JsonResponse(form.errors, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            result = entity.ai_associate(user=request.user)
+            result = entity.ai_associate(
+                user=request.user, llm_model=form.cleaned_data["llm_model"]
+            )
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1368,7 +1385,13 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
         if not entity.user_has_staff_perms(request.user):
             raise PermissionDenied
 
-        inferred_product_data, errors = entity.ai_infer_product_data()
+        form = LlmModelForm(request.GET)
+        if not form.is_valid():
+            return JsonResponse(form.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        inferred_product_data, errors = entity.ai_infer_product_data(
+            llm_model=form.cleaned_data["llm_model"]
+        )
 
         result = {
             "inferred_product_data": inferred_product_data,
@@ -1389,7 +1412,9 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
 
         try:
             product = entity.ai_create_product(
-                ignore_errors=form.cleaned_data["ignore_errors"], creator=request.user
+                ignore_errors=form.cleaned_data["ignore_errors"],
+                creator=request.user,
+                llm_model=form.cleaned_data["llm_model"],
             )
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

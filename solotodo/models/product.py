@@ -660,7 +660,7 @@ class Product(models.Model):
         prompt_input = json.dumps(self.ai_specs) + "\n\n" + "\n\n".join(descriptions)
 
         prompt = tagging_prompt.invoke({"input": prompt_input})
-        seo_description = settings.OPENAI_LLM.invoke(prompt)
+        seo_description = settings.LLMS["gpt-4.1-mini"].invoke(prompt)
 
         return seo_description.content
 
@@ -686,7 +686,7 @@ Descripción del producto:
         )
 
         prompt = tagging_prompt.invoke({"input": joined_descriptions})
-        seo_description = settings.OPENAI_LLM.invoke(prompt)
+        seo_description = settings.LLMS["gpt-4.1-mini"].invoke(prompt)
 
         return seo_description.content
 
@@ -715,7 +715,7 @@ palabra1, palabra2, sinónimo1, sinónimo2, palabra relacionada1, etc.
         )
 
         prompt = tagging_prompt.invoke({"input": joined_descriptions})
-        keywords = settings.OPENAI_LLM.invoke(prompt).content
+        keywords = settings.LLMS["gpt-4.1-mini"].content
         keywords += f", {str(self)}, {self.id}, {self.instance_model_id}"
 
         for instance_field in self.instance_model.fields.all():

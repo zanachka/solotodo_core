@@ -118,3 +118,10 @@ def fetch_sec_fields(qr_code):
 
 def sha256(value):
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def get_llm(model_name=None):
+    from django.conf import settings
+
+    model_name = model_name or "claude-3-5-haiku-latest"
+    return settings.LLMS[model_name]

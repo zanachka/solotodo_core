@@ -125,9 +125,9 @@ def update_entity_sec_qr_codes(entity_id):
     max_retries=2,
     default_retry_delay=10,
 )
-def ai_associate_entity(entity_id):
+def ai_associate_entity(entity_id, llm_model=None):
     entity = Entity.objects.get(pk=entity_id)
-    entity.ai_associate()
+    entity.ai_associate(llm_model=llm_model)
 
 
 @shared_task(
@@ -137,9 +137,9 @@ def ai_associate_entity(entity_id):
     max_retries=2,
     default_retry_delay=10,
 )
-def ai_entity_update_category(entity_id):
+def ai_entity_update_category(entity_id, llm_model=None):
     entity = Entity.objects.get(pk=entity_id)
-    entity.ai_update_category()
+    entity.ai_update_category(llm_model)
 
 
 @shared_task(
