@@ -725,17 +725,29 @@ palabra1, palabra2, sinónimo1, sinónimo2, palabra relacionada1, etc.
         return keywords
 
     def update_ai_fields(self, fields=None):
-        es_product = EsProduct.get_by_product_id(self.pk)
+        ai_description = None
+        ai_meta_tag_description = None
+        keywords = None
 
         if fields is None or "ai_description" in fields:
-            es_product.ai_description = self.ai_generate_description()
-            es_product.save()
+            ai_description = self.ai_generate_description()
         if fields is None or "ai_meta_tag_description" in fields:
-            es_product.ai_meta_tag_description = self.ai_generate_meta_tag_description()
-            es_product.save()
+            ai_meta_tag_description = self.ai_generate_meta_tag_description()
         if fields is None or "keywords" in fields:
-            es_product.keywords = self.ai_generate_keywords()
-            es_product.save()
+            keywords = self.ai_generate_keywords()
+
+        # Fetch and update the ElasticSearch document as late as possible to prevent conflicts between the moment
+        # the document is fetched and when it is saved, for example when creating and editing a cloned product
+
+        es_product = EsProduct.get_by_product_id(self.pk)
+        if ai_description:
+            es_product.ai_description = ai_description
+        if ai_meta_tag_description:
+            es_product.ai_meta_tag_description = ai_meta_tag_description
+        if keywords:
+            es_product.keywords = keywords
+
+        es_product.save()
 
     class Meta:
         app_label = "solotodo"
