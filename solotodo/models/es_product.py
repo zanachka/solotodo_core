@@ -84,7 +84,6 @@ class EsProduct(EsProductEntities):
 
         if not elasticsearch_document:
             elasticsearch_document = cls(meta={"id": "PRODUCT_{}".format(product.id)})
-            elasticsearch_document.keywords = specs_content
 
         elasticsearch_document.product_id = product.id
         elasticsearch_document.name = str(product)
@@ -98,6 +97,7 @@ class EsProduct(EsProductEntities):
         elasticsearch_document.creation_date = product.creation_date
         elasticsearch_document.last_updated = product.last_updated
         elasticsearch_document.specs = specs
+        elasticsearch_document.keywords = specs_content
         elasticsearch_document.related_instance_model_ids = related_instance_model_ids
         elasticsearch_document.product_relationships = "product"
         elasticsearch_document.vector = vector
