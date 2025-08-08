@@ -22,7 +22,6 @@ class EsProduct(EsProductEntities):
     related_instance_model_ids = Integer(multi=True)
 
     # Fields used by the vector store that finds similar products
-    # The "text" fields doesn't seem to be used anywhere
     text = Text(fields={"keyword": Keyword()})
     vector = DenseVector(
         dims=3072,
@@ -98,6 +97,7 @@ class EsProduct(EsProductEntities):
         elasticsearch_document.last_updated = product.last_updated
         elasticsearch_document.specs = specs
         elasticsearch_document.keywords = specs_content
+        elasticsearch_document.text = specs_content
         elasticsearch_document.related_instance_model_ids = related_instance_model_ids
         elasticsearch_document.product_relationships = "product"
         elasticsearch_document.vector = vector
