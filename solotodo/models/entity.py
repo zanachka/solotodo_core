@@ -904,6 +904,10 @@ class Entity(models.Model):
                     uppercase_field_enum_choices_dict = {
                         x: x.upper() for x in field_enum_choices
                     }
+                    # Add the single quote choices because OpenAI works with single quotes instead of double
+                    uppercase_field_enum_choices_dict.update(
+                        {x: x.upper().replace('"', "'") for x in field_enum_choices}
+                    )
                     uppercase_best_match, score, best_match = (
                         rapidfuzz.process.extractOne(
                             decoded_singular_value.upper(),
@@ -1055,13 +1059,17 @@ class Entity(models.Model):
                         {"term": {"product_relationships": "product"}},
                         {"term": {"category_id": self.category_id}},
                     ],
+                    # Custom field, overrides the query sent to elasticsearch with just the specs of the product
+                    "vector_store_query": json.dumps(
+                        inferred_product_data, sort_keys=True
+                    ),
                 },
             ),
             combine_docs_chain,
         )
 
         prompt = f"""
-        Return the information of up to five indexed products that match the product described the JSON at the end of this prompt based on its brand, commercial model and technical specifications.
+        Return the information of up to ten indexed products that match the product described the JSON at the end of this prompt based on its brand, commercial model and technical specifications.
         
         The results brand should be similar to {inferred_product_data['brand']}
         The results commercial model should be similar to {inferred_product_data['commercial_model']}

@@ -123,5 +123,5 @@ def sha256(value):
 def get_llm(model_name=None):
     from django.conf import settings
 
-    model_name = model_name or "claude-3-5-haiku-latest"
+    model_name = model_name or "gpt-5-mini"
     return settings.LLMS[model_name]

@@ -190,6 +190,7 @@ class Category(models.Model):
                         "unicode_representation", flat=True
                     )
                 )
+                # OpenAI doesn't like double quotes, change then to single quotes
                 field_type = Literal.__getitem__(
                     tuple([x.replace('"', "'") for x in enum_choices])
                 )
