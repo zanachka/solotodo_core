@@ -1053,7 +1053,7 @@ class Entity(models.Model):
             settings.VECTOR_STORE.as_retriever(
                 search_type="similarity",
                 search_kwargs={
-                    "k": 50,
+                    "k": 25,
                     "score_threshold": 0.5,
                     "filter": [
                         {"term": {"product_relationships": "product"}},
@@ -1069,7 +1069,7 @@ class Entity(models.Model):
         )
 
         prompt = f"""
-        Return the information of up to ten indexed products that match the product described the JSON at the end of this prompt based on its brand, commercial model and technical specifications.
+        Return the information of up to five indexed products that match the product described the JSON at the end of this prompt based on its brand, commercial model and technical specifications.
         
         The results brand should be similar to {inferred_product_data['brand']}
         The results commercial model should be similar to {inferred_product_data['commercial_model']}
