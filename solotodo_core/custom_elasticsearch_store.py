@@ -5,7 +5,7 @@ from langchain_elasticsearch import ElasticsearchStore
 from langchain_elasticsearch._utilities import _hits_to_docs_scores
 
 
-class CustomElasticseachStore(ElasticsearchStore):
+class CustomElasticsearchStore(ElasticsearchStore):
     def similarity_search(
         self,
         query: str,
