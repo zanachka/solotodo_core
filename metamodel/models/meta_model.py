@@ -11,34 +11,43 @@ class MetaModel(models.Model):
     unicode_template = models.CharField(max_length=255, null=True, blank=True)
     ordering_field = models.CharField(max_length=50, null=True, blank=True)
 
-    default_class = {'class': 'form-control'}
+    default_class = {"class": "form-control"}
 
     NAME_INPUT_TYPES_DICT = {
-        'BooleanField': ('checkbox', forms.CheckboxInput()),
-        'CharField': ('text', type('CharInput',
-                                   (forms.TextInput, ),
-                                   {'input_type': 'text'})(default_class)),
-        'DateField': ('date', type('DateInput', (forms.DateInput, ),
-                                   {'input_type': 'date'})(format='%Y-%m-%d')),
-        'DateTimeField': ('datetime-local',
-                          type('DateTimeInput',
-                               (forms.DateTimeInput, ),
-                               {'input_type': 'datetime-local'})(
-                              attrs={
-                                  'format': '%Y-%m-%dT%H:%M',
-                                  'class': 'form-control'}
-                          )),
-        'DecimalField': ('number', type('DecimalInput',
-                                        (forms.TextInput, ),
-                                        {'input_type': 'number'})(
-            attrs={'step': '0.001', 'class': 'form-control'}
-        )),
-        'FileField': ('file', AdminImageWidget()),
-        'IntegerField': ('number', type('IntegerInput',
-                                        (forms.TextInput, ),
-                                        {'input_type': 'number'})(
-            default_class
-        )),
+        "BooleanField": ("checkbox", forms.CheckboxInput()),
+        "CharField": (
+            "text",
+            type("CharInput", (forms.TextInput,), {"input_type": "text"})(
+                default_class
+            ),
+        ),
+        "DateField": (
+            "date",
+            type("DateInput", (forms.DateInput,), {"input_type": "date"})(
+                format="%Y-%m-%d"
+            ),
+        ),
+        "DateTimeField": (
+            "datetime-local",
+            type(
+                "DateTimeInput",
+                (forms.DateTimeInput,),
+                {"input_type": "datetime-local"},
+            )(attrs={"format": "%Y-%m-%dT%H:%M", "class": "form-control"}),
+        ),
+        "DecimalField": (
+            "number",
+            type("DecimalInput", (forms.TextInput,), {"input_type": "number"})(
+                attrs={"step": "0.00001", "class": "form-control"}
+            ),
+        ),
+        "FileField": ("file", AdminImageWidget()),
+        "IntegerField": (
+            "number",
+            type("IntegerInput", (forms.TextInput,), {"input_type": "number"})(
+                default_class
+            ),
+        ),
     }
 
     PRIMITIVE_MODELS_DICT = None
@@ -55,7 +64,7 @@ class MetaModel(models.Model):
         return MetaModel.NAME_INPUT_TYPES_DICT[self.name][0]
 
     def get_form(self):
-        form_klass = type('MetaModelForm', (forms.Form, ), {})
+        form_klass = type("MetaModelForm", (forms.Form,), {})
 
         for field in self.fields.filter(hidden=False):
             form_klass.base_fields[field.name] = field.get_form_field()
@@ -66,11 +75,10 @@ class MetaModel(models.Model):
         from metamodel.models import InstanceField
 
         if self.is_primitive():
-            raise IntegrityError('Cannot delete primitive fields')
+            raise IntegrityError("Cannot delete primitive fields")
 
         primitive_instance_fields = InstanceField.objects.filter(
-            field__parent=self,
-            field__model__in=MetaModel.get_primitive()
+            field__parent=self, field__model__in=MetaModel.get_primitive()
         )
 
         for field in primitive_instance_fields:
@@ -85,31 +93,33 @@ class MetaModel(models.Model):
         if model_field_class.__name__ in cls.NAME_INPUT_TYPES_DICT.keys():
             return model_field_class
 
-        if model_field_class.__name__ == 'ImageField':
+        if model_field_class.__name__ == "ImageField":
             return models.FileField
 
-        if model_field.__class__.__name__ == 'URLField':
+        if model_field.__class__.__name__ == "URLField":
             return models.CharField
 
-        if model_field.__class__.__name__ == 'TextField':
+        if model_field.__class__.__name__ == "TextField":
             return models.CharField
 
-        if model_field.__class__.__name__ == 'CommaSeparatedIntegerField':
+        if model_field.__class__.__name__ == "CommaSeparatedIntegerField":
             return models.CharField
 
-        if model_field.__class__.__name__ == 'AutoField':
+        if model_field.__class__.__name__ == "AutoField":
             return models.IntegerField
 
-        if model_field_class.__name__ in ['ForeignKey', 'ManyToManyField']:
+        if model_field_class.__name__ in ["ForeignKey", "ManyToManyField"]:
             return model_field.related.parent_model
 
-        raise Exception('No compatible model found: {0} - {1}'.format(
-            model_field_class, model_field.name))
+        raise Exception(
+            "No compatible model found: {0} - {1}".format(
+                model_field_class, model_field.name
+            )
+        )
 
     @classmethod
     def get_non_primitive(cls):
-        return cls.objects.filter(
-            ~Q(name__in=cls.NAME_INPUT_TYPES_DICT.keys()))
+        return cls.objects.filter(~Q(name__in=cls.NAME_INPUT_TYPES_DICT.keys()))
 
     @classmethod
     def get_primitive(cls):
@@ -147,7 +157,7 @@ class MetaModel(models.Model):
             from metamodel.models import MetaField
 
             if not cls.METAMODEL_MODELS_FIELDS_DICT or refresh_cache:
-                fields = MetaField.objects.order_by('parent').select_related()
+                fields = MetaField.objects.order_by("parent").select_related()
 
                 result = {}
 
@@ -178,52 +188,57 @@ class MetaModel(models.Model):
         from metamodel.models import InstanceField
         from metamodel.serializers import MetaFieldPlainSerializer
         from metamodel.serializers import InstanceFieldPlainSerializer
+
         metamodel_data = [
             {
-                'klass': MetaModel,
-                'fields_klass': MetaField,
-                'prefix': 'MM',
-                'serializer': MetaModelPlainSerializer,
-                'fields_serializer': MetaFieldPlainSerializer
-
+                "klass": MetaModel,
+                "fields_klass": MetaField,
+                "prefix": "MM",
+                "serializer": MetaModelPlainSerializer,
+                "fields_serializer": MetaFieldPlainSerializer,
             },
             {
-                'klass': InstanceModel,
-                'fields_klass': InstanceField,
-                'prefix': 'IM',
-                'serializer': InstanceModelPlainSerializer,
-                'fields_serializer': InstanceFieldPlainSerializer
-            }
+                "klass": InstanceModel,
+                "fields_klass": InstanceField,
+                "prefix": "IM",
+                "serializer": InstanceModelPlainSerializer,
+                "fields_serializer": InstanceFieldPlainSerializer,
+            },
         ]
 
         d = {}
 
         for metamodel_entry in metamodel_data:
-            print(metamodel_entry['klass'])
-            print('Loading fields')
-            fields_objects = metamodel_entry['fields_klass'].objects.all()
-            print('Creating field serializer')
-            fields_data = metamodel_entry['fields_serializer'](fields_objects, many=True).data
-            print('Creating field dict')
+            print(metamodel_entry["klass"])
+            print("Loading fields")
+            fields_objects = metamodel_entry["fields_klass"].objects.all()
+            print("Creating field serializer")
+            fields_data = metamodel_entry["fields_serializer"](
+                fields_objects, many=True
+            ).data
+            print("Creating field dict")
             fields_per_parent = defaultdict(lambda: [])
             for field_data in fields_data:
-                fields_per_parent[field_data['parent_id']].append(field_data)
+                fields_per_parent[field_data["parent_id"]].append(field_data)
 
-            print('Loading objects')
-            mm_objects = metamodel_entry['klass'].objects.all()
-            print('Creating objects serializer')
-            serializer = metamodel_entry['serializer']
+            print("Loading objects")
+            mm_objects = metamodel_entry["klass"].objects.all()
+            print("Creating objects serializer")
+            serializer = metamodel_entry["serializer"]
             serialized_objects = serializer(mm_objects, many=True).data
 
-            print('Assembling final dict')
+            print("Assembling final dict")
             for serialized_object in serialized_objects:
-                serialized_object['fields'] = fields_per_parent.get(serialized_object['id'], [])
-                d_key = '{}_{}'.format(metamodel_entry['prefix'], serialized_object['id'])
+                serialized_object["fields"] = fields_per_parent.get(
+                    serialized_object["id"], []
+                )
+                d_key = "{}_{}".format(
+                    metamodel_entry["prefix"], serialized_object["id"]
+                )
                 d[d_key] = serialized_object
 
         return d
 
-
     class Meta:
-        app_label = 'metamodel'
-        ordering = ('name', )
+        app_label = "metamodel"
+        ordering = ("name",)
