@@ -715,7 +715,7 @@ palabra1, palabra2, sinónimo1, sinónimo2, palabra relacionada1, etc.
         )
 
         prompt = tagging_prompt.invoke({"input": joined_descriptions})
-        keywords = settings.LLMS["gpt-4.1-mini"].content
+        keywords = settings.LLMS["gpt-4.1-mini"].invoke(prompt).content
         keywords += f", {str(self)}, {self.id}, {self.instance_model_id}"
 
         for instance_field in self.instance_model.fields.all():
