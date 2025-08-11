@@ -6,6 +6,7 @@ def brand_unicode(elastic_search_original, model_name):
 
     patterns = [
         "brand_unicode",
+        "brand_name",
         "line_brand_unicode",
         "line_family_brand_unicode",
         "family_line_brand_unicode",
