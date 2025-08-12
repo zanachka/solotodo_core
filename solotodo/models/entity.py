@@ -891,12 +891,22 @@ class Entity(models.Model):
                 if singular_value == "null" and is_optional:
                     return None, 100
 
-                if isinstance(singular_value, str) and "\\" in singular_value:
-                    decoded_singular_value = singular_value.encode().decode(
-                        "unicode_escape"
-                    )
-                else:
-                    decoded_singular_value = singular_value
+                decoded_singular_value = singular_value
+
+                if isinstance(singular_value, str):
+                    if "\\" in singular_value:
+                        decoded_singular_value = singular_value.encode().decode(
+                            "unicode_escape"
+                        )
+                    # GPT tends to return NULL characters instead of properly escaped strings, like "Pur\x00e9 de Papas"
+                    # Fix the strings so that 'Pur\x00e9 de Papas' turns into 'Pur\xe9 de Papas' (Puré de Papas)
+                    escaped_character_matches = re.findall("\x00(.{2})", singular_value)
+                    if escaped_character_matches:
+                        for escaped_characters in escaped_character_matches:
+                            decoded_singular_value = decoded_singular_value.replace(
+                                "\x00" + escaped_characters,
+                                bytes.fromhex(escaped_characters).decode("latin1"),
+                            )
 
                 if (
                     decoded_singular_value
