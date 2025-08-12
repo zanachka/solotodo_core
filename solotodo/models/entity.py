@@ -535,6 +535,8 @@ class Entity(models.Model):
         else:
             extra_args = None
 
+        extra_args = scraper.extra_args_with_preflight(extra_args)
+
         scraped_products = scraper.products_for_url(
             self.discovery_url,
             category=self.scraped_category.storescraper_name,
