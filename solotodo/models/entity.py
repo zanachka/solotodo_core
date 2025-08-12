@@ -898,15 +898,25 @@ class Entity(models.Model):
                         decoded_singular_value = singular_value.encode().decode(
                             "unicode_escape"
                         )
-                    # GPT tends to return NULL characters instead of properly escaped strings, like "Pur\x00e9 de Papas"
+                    # GPT tends to return NULL characters between properly escaped strings, like "Pur\x00e9 de Papas"
                     # Fix the strings so that 'Pur\x00e9 de Papas' turns into 'Pur\xe9 de Papas' (Puré de Papas)
-                    escaped_character_matches = re.findall("\x00(.{2})", singular_value)
+                    escaped_character_matches = re.findall(
+                        "\x00(.{2})", decoded_singular_value
+                    )
                     if escaped_character_matches:
                         for escaped_characters in escaped_character_matches:
+                            try:
+                                hex_value = bytes.fromhex(escaped_characters)
+                            except ValueError:
+                                # standalone NULL character (e.g. 'Helado Probi\x00tico Bifid Ice Vainilla')
+                                continue
+
                             decoded_singular_value = decoded_singular_value.replace(
                                 "\x00" + escaped_characters,
-                                bytes.fromhex(escaped_characters).decode("latin1"),
+                                hex_value.decode("latin1"),
                             )
+                    # Nuke the remaining NULL characters
+                    decoded_singular_value = decoded_singular_value.replace("\x00", "")
 
                 if (
                     decoded_singular_value
