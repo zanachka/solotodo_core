@@ -28,7 +28,9 @@ class ProductPictureForm(forms.Form):
         specs = product.specs
 
         if "picture" not in specs:
-            return default_storage.url("products/not_found.png")
+            thumbnail_url = default_storage.url("products/not_found.png")
+            thumbnail_file = default_storage.open("products/not_found.png")
+            return thumbnail_url, thumbnail_file
 
         picture = specs["picture"]
         thumbnail_kwargs = self.thumbnail_kwargs()
@@ -40,4 +42,4 @@ class ProductPictureForm(forms.Form):
             del thumbnail_kwargs["format"]
             resized_picture = get_thumbnail(picture, **thumbnail_kwargs)
 
-        return resized_picture
+        return resized_picture.url, resized_picture

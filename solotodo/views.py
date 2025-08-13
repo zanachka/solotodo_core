@@ -1769,10 +1769,9 @@ class ProductViewSet(LoggingMixin, viewsets.ReadOnlyModelViewSet):
         if not form.is_valid():
             return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        resized_picture = form.product_thumbnail_url(product)
-
+        resized_picture_url, _ = form.product_thumbnail_url(product)
         response = Response(status=status.HTTP_302_FOUND)
-        response["Location"] = resized_picture.url
+        response["Location"] = resized_picture_url
         response["Cache-Control"] = "max-age=3600"
         return response
 
@@ -1785,13 +1784,11 @@ class ProductViewSet(LoggingMixin, viewsets.ReadOnlyModelViewSet):
         if not form.is_valid():
             return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        thumb = form.product_thumbnail_url(product)
-
-        with thumb.storage.open(thumb.name, "rb") as f:
-            image_data = f.read()
+        _thumbnail_url, thumbnail = form.product_thumbnail_url(product)
+        image_data = thumbnail.read()
 
         # Guess MIME type
-        mime_type, _ = mimetypes.guess_type(thumb.name)
+        mime_type, _ = mimetypes.guess_type(thumbnail.name)
         mime_type = mime_type or "image/jpeg"
 
         return HttpResponse(image_data, content_type=mime_type)
