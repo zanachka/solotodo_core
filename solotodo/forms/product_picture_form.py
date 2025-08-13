@@ -28,8 +28,7 @@ class ProductPictureForm(forms.Form):
         specs = product.specs
 
         if "picture" not in specs:
-            not_found = default_storage.open("products/not_found.png")
-            return not_found.url
+            return default_storage.url("products/not_found.png")
 
         picture = specs["picture"]
         thumbnail_kwargs = self.thumbnail_kwargs()
