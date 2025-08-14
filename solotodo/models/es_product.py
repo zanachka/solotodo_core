@@ -68,10 +68,13 @@ class EsProduct(EsProductEntities):
                 continue
             base_field_name = instance_field.field.name
             field_value_candidate_1 = specs.get(base_field_name, None)
-            field_value_candidate_2 = specs.get(f"{base_field_name}_unicode", None)
-            document_content[base_field_name] = (
-                field_value_candidate_1 or field_value_candidate_2
-            )
+
+            if field_value_candidate_1 is not None:
+                field_value = field_value_candidate_1
+            else:
+                field_value = specs.get(f"{base_field_name}_unicode", None)
+
+            document_content[base_field_name] = field_value
         specs_content = json.dumps(document_content, sort_keys=True)
 
         vector = settings.VECTOR_STORE.embedding.embed_documents([specs_content])[0]
