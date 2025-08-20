@@ -27,8 +27,6 @@ class Command(BaseCommand):
 
         for store in stores:
             try:
-                store.scraper
-            except AttributeError:
+                store.update_pricing(extra_args=extra_args)
+            except Exception:
                 continue
-
-            store.update_pricing(extra_args=extra_args)
