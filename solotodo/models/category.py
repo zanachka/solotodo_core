@@ -172,7 +172,42 @@ class Category(models.Model):
             "DecimalField": float,
         }
 
-        for field in self.meta_model.fields.all():
+        # GPT limits the number of enum choices to 1000 in total, and some of our fields have more choices than that
+        # Manually set a list of models with high cardinality to low priority and limit their choices to whatever is
+        # left after considering the normal priority ones
+        low_priority_models = ["TelevisionFamily"]
+        low_priority_models_found = []
+        non_primitive_field_choices = {}
+        available_enum_choices = 1000
+
+        for field in self.meta_model.fields.select_related("model"):
+            if field.model.is_primitive():
+                continue
+            if field.model.name in low_priority_models:
+                low_priority_models_found.append(field.model.name)
+                continue
+            enum_choices = list(
+                field.model.instancemodel_set.all().values_list(
+                    "unicode_representation", flat=True
+                )
+            )
+            available_enum_choices -= len(enum_choices)
+            non_primitive_field_choices[field.model.id] = enum_choices
+
+        if low_priority_models_found:
+            low_priority_instances_limit = max(
+                available_enum_choices // len(low_priority_models_found), 0
+            )
+            for low_priority_model_found in low_priority_models_found:
+                model = MetaModel.objects.get(name=low_priority_model_found)
+                enum_choices = list(
+                    model.instancemodel_set.order_by("-pk")[
+                        :low_priority_instances_limit
+                    ].values_list("unicode_representation", flat=True)
+                )
+                non_primitive_field_choices[model.id] = enum_choices
+
+        for field in self.meta_model.fields.select_related("model"):
             model_name = field.model.name
             field_data = Field(description=field.help_text or "")
 
@@ -185,11 +220,7 @@ class Category(models.Model):
             if field.model.is_primitive():
                 field_type = field_types[model_name]
             else:
-                enum_choices = list(
-                    field.model.instancemodel_set.all().values_list(
-                        "unicode_representation", flat=True
-                    )
-                )
+                enum_choices = non_primitive_field_choices[field.model.id]
                 # OpenAI doesn't like double quotes, change then to single quotes
                 field_type = Literal.__getitem__(
                     tuple([x.replace('"', "'") for x in enum_choices])
