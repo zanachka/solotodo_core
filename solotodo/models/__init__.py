@@ -94,7 +94,10 @@ def update_product_in_es(product, es_document, **kwargs):
     except NotFoundError:
         existing_elasticsearch_document = None
     EsProduct.from_product(product, es_document, existing_elasticsearch_document).save()
-    ai_update_product_fields.delay(product.id)
+    # Create the AI descriptions if the product is not a grocery for now
+    # TODO: improve this so that it is not hardcoded
+    if product.category_id != 549:
+        ai_update_product_fields.delay(product.id)
 
 
 @receiver(post_delete, sender=Product)
