@@ -1,6 +1,7 @@
 import io
 import json
 import re
+import traceback
 
 import rapidfuzz
 import urllib
@@ -1017,7 +1018,8 @@ class Entity(models.Model):
             # to calculate important params of the associated product (its brand, for example)
             instance.delete()
             raise Exception(
-                "Product could not be created due to errors in the inferred data"
+                "Product could not be created due to errors in the inferred data: "
+                + traceback.format_exc()
             )
 
         product = Product.objects.get(instance_model=instance)
