@@ -817,6 +817,9 @@ class Entity(models.Model):
         if self.part_number:
             data["manufacturer_part_number"] = self.part_number
 
+        if self.ean:
+            data["ean"] = self.ean
+
         if self.sec_qr_codes and self.sec_qr_codes != "0":
             data["sec_qr_codes"] = self.sec_qr_codes
 
