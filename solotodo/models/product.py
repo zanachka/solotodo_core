@@ -725,6 +725,11 @@ palabra1, palabra2, sinónimo1, sinónimo2, palabra relacionada1, etc.
         return keywords
 
     def update_ai_fields(self, fields=None):
+        # If the product is a Grocery dont generate AI fields for it
+        # TODO: improve this so that it is not hardcoded
+        if self.category_id == 549:
+            return
+
         ai_description = None
         ai_meta_tag_description = None
         keywords = None
