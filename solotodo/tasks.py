@@ -5,6 +5,7 @@ from celery import shared_task
 from django.core.mail import EmailMessage
 from django.http import QueryDict
 
+from metamodel.models import InstanceModel
 from solotodo.memcached_limiter import (
     ConcurrencyLimitReached,
     memcached_site_limit,
@@ -29,6 +30,11 @@ MAX_RETRIES = 400
 @shared_task(queue="general", ignore_result=True)
 def product_save(product_id):
     Product.objects.get(pk=product_id).save()
+
+
+@shared_task(queue="general", ignore_result=True)
+def instance_model_save(instance_model_id):
+    InstanceModel.objects.get(pk=instance_model_id).save()
 
 
 @shared_task(queue="general", ignore_result=True)
