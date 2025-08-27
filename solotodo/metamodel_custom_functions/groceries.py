@@ -54,7 +54,7 @@ def unicode_function(im):
     if m != "Groceries":
         return None
 
-    result = f"{im.brand} {im.commercial_model}"
+    result = f"{im.brand_name} {im.commercial_model}"
 
     if im.net_content and im.net_content_unit:
         if im.unit_count > 1:
