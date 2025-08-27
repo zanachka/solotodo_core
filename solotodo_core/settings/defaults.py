@@ -412,6 +412,7 @@ METAMODEL = {
     "UNICODE_FUNCTIONS": [
         "solotodo.metamodel_custom_functions.hardware.unicode_function",
         "solotodo.metamodel_custom_functions.electro.unicode_function",
+        "solotodo.metamodel_custom_functions.groceries.unicode_function",
     ],
     "ORDERING_FUNCTIONS": [
         "solotodo.metamodel_custom_functions.notebooks.ordering_value"
