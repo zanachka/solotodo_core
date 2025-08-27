@@ -38,6 +38,11 @@ def instance_model_save(instance_model_id):
 
 
 @shared_task(queue="general", ignore_result=True)
+def instance_model_delete(instance_model_id):
+    InstanceModel.objects.get(pk=instance_model_id).delete()
+
+
+@shared_task(queue="general", ignore_result=True)
 def entity_save(entity_id):
     Entity.objects.get(pk=entity_id).save()
 
