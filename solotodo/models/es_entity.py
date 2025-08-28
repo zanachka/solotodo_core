@@ -112,9 +112,16 @@ class EsEntity(EsProductEntities):
             # entity.product is not null because only associated entities
             # can be indexed
             specs = entity.product.specs
-            conversion_factor = Decimal(
-                specs["category_unit_price_per_unit_conversion_factor"]
-            ) / Decimal(specs["volume_weight"])
+
+            net_content = specs.get("net_content", None)
+            net_content_conversion_rate = specs.get(
+                "net_content_unit_conversion_rate", None
+            )
+
+            if net_content and net_content_conversion_rate:
+                conversion_factor = Decimal(net_content_conversion_rate / net_content)
+            else:
+                conversion_factor = Decimal(1)
 
             normal_price_per_unit = (
                 active_registry.normal_price * conversion_factor
