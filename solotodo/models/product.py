@@ -621,7 +621,9 @@ class Product(models.Model):
 - Destaca las características del producto.
 - Incluye una lista con al menos 3 características principales.
 - Usa encabezados y formato Markdown para estructurar el contenido.
-- La ficha va ser usada para el mercado de Chile, considera el voltaje y otros estándares de ese país
+- No incluyas imagenes o tablas
+- La ficha va ser usada para el mercado de Chile, asume que el producto va a ser utilizado en ese país
+- No es necesario incluir información de compatibilidad eléctrica
 
 ## Input del usuario:
 
