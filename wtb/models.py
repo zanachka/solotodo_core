@@ -347,6 +347,7 @@ class WtbEntity(models.Model):
                 self.price = None
 
             self.save()
+            self.scraped_categories.add(category)
         elif self.scraped_categories.all():
             self.scraped_categories.set([])
 
@@ -402,7 +403,7 @@ class WtbEntity(models.Model):
             price = None
 
         try:
-            cls.objects.create(
+            new_entity = cls.objects.create(
                 name=scraped_product.name[:254],
                 model_name=scraped_product.sku,
                 brand=brand,
@@ -414,6 +415,7 @@ class WtbEntity(models.Model):
                 price=price,
                 description=scraped_product.description,
             )
+            new_entity.scraped_categories.add(category)
         except IntegrityError:
             # There is the possibility of a race condition in our celery workers, where two of them may try to create
             # the same entity at almost the same time
