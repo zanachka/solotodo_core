@@ -64,18 +64,22 @@ class WtbEntityFilterSet(rest_framework.FilterSet):
     def _lg_product_comparison(self, queryset, name, value):
         # Product comparison entities have JSON in their description that starts with '['
         return queryset.filter(
-            description__startswith="[", description__endswith="]", is_active=True
+            description__startswith="[",
+            description__endswith="]",
+            scraped_categories__isnull=False,
         )
 
     def _lg_emotional_pdp(self, queryset, name, value):
         # Emotional PDP entities have HTML in their description that starts with '<'
         return queryset.filter(
-            description__startswith="<", description__endswith=">", is_active=True
+            description__startswith="<",
+            description__endswith=">",
+            scraped_categories__isnull=False,
         )
 
     class Meta:
         model = WtbEntity
-        fields = ["is_active", "is_visible", "product"]
+        fields = ["is_visible", "product"]
 
 
 class WtbEntityStaffFilterSet(rest_framework.FilterSet):

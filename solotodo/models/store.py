@@ -15,7 +15,7 @@ from sorl.thumbnail import ImageField
 from .store_type import StoreType
 from .country import Country
 from .category import Category
-from solotodo.utils import validate_sii_rut
+from solotodo.utils import validate_sii_rut, sha256
 from solotodo_core.s3utils import MediaRootS3Boto3Storage
 from storescraper.utils import get_store_class_by_name
 
@@ -477,7 +477,7 @@ class Store(models.Model):
         ) in self.scraper.discover_urls_for_category_with_custom_exception(
             category.storescraper_name, extra_args=extra_args
         ):
-            cache_key = f"SCRAPING_{update_log.id}_{hash(discovery_url)}"
+            cache_key = f"SCRAPING_{update_log.id}_{sha256(discovery_url)}"
             already_scraped_product_keys = cache.get(cache_key)
             if already_scraped_product_keys:
                 # The discovery url has already been resolved by another process recently. Skip its
@@ -580,7 +580,7 @@ class Store(models.Model):
                 entity.active_registry = None
                 entity.save()
 
-        cache_key = f"SCRAPING_{update_log.id}_{hash(discovery_url)}"
+        cache_key = f"SCRAPING_{update_log.id}_{sha256(discovery_url)}"
         cache.set(cache_key, json.dumps(scraped_keys), 60 * 60)
         update_log.decrement_task_counter()
 

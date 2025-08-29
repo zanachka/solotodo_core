@@ -237,7 +237,7 @@ class WtbEntityViewSet(viewsets.ReadOnlyModelViewSet):
 
         entities = Entity.objects.filter(
             product__wtbentity__brand=wtb_brand,
-            product__wtbentity__is_active=True,
+            product__wtbentity__scraped_categories__isnull=False,
         )
 
         similar_products = product.find_similar(
@@ -247,7 +247,9 @@ class WtbEntityViewSet(viewsets.ReadOnlyModelViewSet):
         similar_products = [e["product"] for e in similar_products]
 
         wtb_entities = WtbEntity.objects.filter(
-            brand=wtb_brand, product__in=similar_products, is_active=True
+            brand=wtb_brand,
+            product__in=similar_products,
+            scraped_categories__isnull=False,
         ).select_related("product")
 
         product_wtb_entity_dict = {}

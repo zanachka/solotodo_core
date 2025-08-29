@@ -1,13 +1,15 @@
 import json
+import logging
+import traceback
 
 from django.contrib.auth import get_user_model
-from django.core.files.base import ContentFile
+from django.core.cache import cache
 from django.db import models, IntegrityError
 from django.utils import timezone
 from guardian.shortcuts import get_objects_for_user
 
 from solotodo.models import Store, Product, Category, Website, Brand
-from solotodo.utils import iterable_to_dict
+from solotodo.utils import sha256
 from solotodo_core.s3utils import PrivateS3Boto3Storage
 from storescraper.utils import get_store_class_by_name
 
@@ -34,88 +36,192 @@ class WtbBrand(models.Model):
 
     def update_entities(
         self,
+        categories=None,
         discover_urls_concurrency=None,
         products_for_url_concurrency=None,
         use_async=None,
         update_log=None,
         extra_args=None,
     ):
+        from wtb.tasks import wtb_brand_category_update_pricing
+
         assert self.storescraper_class
 
-        scraper = self.scraper
+        if not discover_urls_concurrency:
+            discover_urls_concurrency = self.scraper.preferred_discover_urls_concurrency
 
-        if update_log:
-            update_log.status = update_log.IN_PROCESS
-            update_log.save()
-        else:
+        if not products_for_url_concurrency:
+            products_for_url_concurrency = (
+                self.scraper.preferred_products_for_url_concurrency
+            )
+
+        if use_async is None:
+            use_async = self.scraper.prefer_async
+
+        if not update_log:
             update_log = WtbBrandUpdateLog.objects.create(
                 brand=self, status=WtbBrandUpdateLog.IN_PROCESS
             )
 
-        # First pass of product retrieval
+        extra_args = self.scraper.extra_args_with_preflight(extra_args)
 
-        def log_update_error(exception):
-            if update_log:
-                update_log.status = update_log.ERROR
-                desired_filename = "logs/scrapings/{}_{}.json".format(
-                    self,
-                    timezone.localtime(update_log.creation_date).strftime(
-                        "%Y-%m-%d_%X"
-                    ),
+        logger = logging.getLogger("logstash")
+        logging_payload = {
+            "message": "Started WTB update",
+            "wtb_update_log_id": update_log.id,
+        }
+        logger.info(json.dumps(logging_payload))
+
+        if categories:
+            categories = categories.filter(
+                storescraper_name__in=self.scraper.categories()
+            )
+        else:
+            categories = Category.objects.filter(
+                storescraper_name__in=self.scraper.categories()
+            )
+
+        if use_async:
+            cache.set(f"wtb_{self.id}_discover_entries", 0, 2 * 60 * 60)
+            cache.set(f"wtb_{self.id}_products_for_url", 0, 2 * 60 * 60)
+
+            update_log.initialize_task_counter(0)
+
+            for category in categories:
+                update_log.increment_task_counter()
+
+                if use_async:
+                    wtb_brand_category_update_pricing.delay(
+                        self.id,
+                        category.id,
+                        discover_urls_concurrency,
+                        products_for_url_concurrency,
+                        use_async,
+                        update_log.id,
+                        extra_args,
+                    )
+        else:
+            update_log.initialize_task_counter(1)
+            for category in categories:
+                update_log.increment_task_counter()
+                self.update_entities_category(
+                    category,
+                    products_for_url_concurrency,
+                    use_async,
+                    update_log,
+                    extra_args,
                 )
-                storage = PrivateS3Boto3Storage()
-                real_filename = storage.save(
-                    desired_filename, ContentFile(str(exception).encode("utf-8"))
+            update_log.decrement_task_counter()
+        return update_log
+
+    def update_entities_category(
+        self,
+        category,
+        products_for_url_concurrency,
+        use_async,
+        wtb_brand_update_log,
+        extra_args,
+    ):
+        from wtb.tasks import wtb_brand_create_or_update_entity_from_discovery_url
+
+        logger = logging.getLogger("logstash")
+        logging_payload = {
+            "message": "Started WTB category entities update: " + str(category),
+            "wtb_update_log_id": wtb_brand_update_log.id,
+        }
+        logger.info(json.dumps(logging_payload))
+        discovered_urls = []
+        logger.info(
+            json.dumps(
+                {
+                    "message": "Discovering URLs for category: " + str(category),
+                    "wtb_update_log_id": wtb_brand_update_log.id,
+                }
+            )
+        )
+        for (
+            discovery_url
+        ) in self.scraper.discover_urls_for_category_with_custom_exception(
+            category.storescraper_name, extra_args=extra_args
+        ):
+            cache_key = (
+                f"WTB_SCRAPING_{wtb_brand_update_log.id}_{sha256(discovery_url)}"
+            )
+            already_scraped_product_keys = cache.get(cache_key)
+            if already_scraped_product_keys:
+                # The discovery url has already been resolved by another process recently. Skip its
+                # scraping, we just need to add our category to its scraped_categories
+                already_scraped_product_keys = json.loads(already_scraped_product_keys)
+                already_updated_entities = self.wtbentity_set.filter(
+                    key__in=already_scraped_product_keys
                 )
-                update_log.registry_file = real_filename
-                update_log.save()
+                for entity in already_updated_entities:
+                    entity.scraped_categories.add(category)
+            else:
+                wtb_brand_update_log.increment_task_counter()
 
-        try:
-            scraped_products_data = scraper.products(
-                discover_urls_concurrency=discover_urls_concurrency,
-                products_for_url_concurrency=products_for_url_concurrency,
-                use_async=use_async,
-                extra_args=extra_args,
+                if use_async:
+                    wtb_brand_create_or_update_entity_from_discovery_url.delay(
+                        self.id,
+                        wtb_brand_update_log.id,
+                        discovery_url,
+                        category.id,
+                        extra_args,
+                        products_for_url_concurrency,
+                    )
+                else:
+                    self.create_or_update_entity_from_discovery_url(
+                        wtb_brand_update_log, discovery_url, category, extra_args
+                    )
+            discovered_urls.append(discovery_url)
+
+        # Mark the DB entities that were not detected as inactive
+        entities_for_update = self.wtbentity_set.filter(
+            scraped_categories=category
+        ).exclude(url__in=discovered_urls)
+        for entity in entities_for_update:
+            entity.scraped_categories.remove(category)
+            entity.save()
+
+        wtb_brand_update_log.decrement_task_counter()
+
+    def create_or_update_entity_from_discovery_url(
+        self, wtb_brand_update_log, discovery_url, category, extra_args=None
+    ):
+        logger = logging.getLogger("logstash")
+
+        existing_entities = self.wtbentity_set.filter(url=discovery_url)
+        existing_entities_dict = {e.key: e for e in existing_entities}
+        scraped_keys = []
+
+        for scraped_product in self.scraper.products_for_url_with_custom_exception(
+            discovery_url, category.storescraper_name, extra_args=extra_args
+        ):
+            logger.info(
+                json.dumps(
+                    {
+                        "message": "Scraped product " + str(scraped_product),
+                        "wtb_update_log_id": wtb_brand_update_log.id,
+                    }
+                )
             )
-        except Exception as e:
-            log_update_error(e)
-            raise
 
-        scraped_products = scraped_products_data["products"]
-        scraped_products_dict = iterable_to_dict(scraped_products, "key")
+            scraped_keys.append(scraped_product.key)
+            existing_entity = existing_entities_dict.pop(scraped_product.key, None)
 
-        entities_to_be_updated = self.wtbentity_set.select_related()
+            if existing_entity:
+                existing_entity.update_with_scraped_product(
+                    scraped_product, category=category
+                )
+            else:
+                WtbEntity.create_from_scraped_product(scraped_product, self, category)
 
-        categories_dict = iterable_to_dict(Category, "storescraper_name")
+        for entity in existing_entities_dict.values():
+            entity.scraped_categories.remove(category)
 
-        for entity in entities_to_be_updated:
-            scraped_product_for_update = scraped_products_dict.pop(entity.key, None)
-
-            entity.update_with_scraped_product(scraped_product_for_update)
-
-        for scraped_product in scraped_products_dict.values():
-            WtbEntity.create_from_scraped_product(
-                scraped_product, self, categories_dict[scraped_product.category]
-            )
-
-        if update_log:
-            update_log.status = update_log.SUCCESS
-
-            serialized_scraping_info = [p.serialize() for p in scraped_products]
-
-            storage = PrivateS3Boto3Storage()
-            scraping_record_file = ContentFile(
-                json.dumps(serialized_scraping_info, indent=4).encode("utf-8")
-            )
-
-            desired_filename = "logs/scrapings/{}_{}.json".format(
-                self,
-                timezone.localtime(update_log.creation_date).strftime("%Y-%m-%d_%X"),
-            )
-            real_filename = storage.save(desired_filename, scraping_record_file)
-            update_log.registry_file = real_filename
-
-            update_log.save()
+        cache_key = f"WTB_SCRAPING_{wtb_brand_update_log.id}_{sha256(discovery_url)}"
+        cache.set(cache_key, json.dumps(scraped_keys), 60 * 60)
+        wtb_brand_update_log.decrement_task_counter()
 
     class Meta:
         ordering = ("name",)
@@ -164,6 +270,7 @@ class WtbEntity(models.Model):
     model_name = models.CharField(max_length=255, db_index=True)
     brand = models.ForeignKey(WtbBrand, on_delete=models.CASCADE)
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
+    scraped_categories = models.ManyToManyField(Category, blank=True, related_name="+")
     product = models.ForeignKey(
         Product, on_delete=models.CASCADE, blank=True, null=True
     )
@@ -176,7 +283,6 @@ class WtbEntity(models.Model):
     creation_date = models.DateTimeField(auto_now_add=True)
     last_updated = models.DateTimeField(auto_now=True)
     is_visible = models.BooleanField(default=True)
-    is_active = models.BooleanField(default=True)
 
     objects = WtbEntityQuerySet.as_manager()
 
@@ -216,11 +322,7 @@ class WtbEntity(models.Model):
 
         super(WtbEntity, self).save(*args, **kwargs)
 
-    def available_entities(self):
-        assert self.product
-        es = self.product.entity_set.get_available().filter(seller__isnull=True)
-
-    def update_with_scraped_product(self, scraped_product):
+    def update_with_scraped_product(self, scraped_product, category):
         assert scraped_product is None or self.key == scraped_product.key
 
         if scraped_product:
@@ -229,15 +331,15 @@ class WtbEntity(models.Model):
             else:
                 picture_url = "https://via.placeholder.com/200"
 
-            if scraped_product.positions:
-                self.section = scraped_product.positions[0][0]
+            # if scraped_product.positions:
+            #     self.section = scraped_product.positions[0][0]
 
             self.name = scraped_product.name[:254]
             self.model_name = scraped_product.sku
             self.url = scraped_product.url[:190]
             self.picture_url = picture_url[:250]
             self.description = scraped_product.description
-            self.is_active = True
+            self.category = category
 
             if scraped_product.normal_price and scraped_product.stock != 0:
                 self.price = scraped_product.normal_price
@@ -245,9 +347,8 @@ class WtbEntity(models.Model):
                 self.price = None
 
             self.save()
-        elif self.is_active:
-            self.is_active = False
-            self.save()
+        elif self.scraped_categories.all():
+            self.scraped_categories.set([])
 
     def associate(self, user, product):
         if not self.is_visible:
@@ -290,31 +391,37 @@ class WtbEntity(models.Model):
         else:
             picture_url = "https://via.placeholder.com/200"
 
-        if scraped_product.positions:
-            section = scraped_product.positions[0][0]
-        else:
-            section = None
+        # if scraped_product.positions:
+        #     section = scraped_product.positions[0][0]
+        # else:
+        #     section = None
 
         if scraped_product.normal_price and scraped_product.stock != 0:
             price = scraped_product.normal_price
         else:
             price = None
 
-        cls.objects.create(
-            name=scraped_product.name[:254],
-            model_name=scraped_product.sku,
-            brand=brand,
-            category=category,
-            key=scraped_product.key,
-            url=scraped_product.url[:190],
-            picture_url=picture_url[:190],
-            section=section,
-            price=price,
-            description=scraped_product.description,
-        )
+        try:
+            cls.objects.create(
+                name=scraped_product.name[:254],
+                model_name=scraped_product.sku,
+                brand=brand,
+                category=category,
+                key=scraped_product.key,
+                url=scraped_product.url[:190],
+                picture_url=picture_url[:190],
+                # section=section,
+                price=price,
+                description=scraped_product.description,
+            )
+        except IntegrityError:
+            # There is the possibility of a race condition in our celery workers, where two of them may try to create
+            # the same entity at almost the same time
+            return
 
     class Meta:
         ordering = ("brand", "name")
+        unique_together = ("brand", "key")
         permissions = [
             (
                 "backend_view_pending_wtb_entities",
@@ -346,6 +453,50 @@ class WtbBrandUpdateLog(models.Model):
 
     def __str__(self):
         return "{} - {}".format(self.brand, self.last_updated)
+
+    def initialize_task_counter(self, value):
+        cache.set(self._caching_key(), value, timeout=60 * 60 * 24)
+        entities_cache_key = f"{self._caching_key()}_entity_count"
+        cache.set(entities_cache_key, 0, timeout=60 * 60 * 24)
+
+    def increment_task_counter(self):
+        new_val = cache.incr(self._caching_key())
+        return new_val
+
+    def increment_entity_count(self):
+        entity_count_cache_key = f"{self._caching_key()}_entity_count"
+        cache.incr(entity_count_cache_key)
+
+    def decrement_task_counter(self):
+        new_val = cache.decr(self._caching_key())
+
+        if new_val == 0:
+            logger = logging.getLogger("logstash")
+            logger.info(
+                json.dumps(
+                    {
+                        "message": "Finished WTB pricing update",
+                        "wtb_update_log_id": self.id,
+                    }
+                )
+            )
+            if self.status == WtbBrandUpdateLog.IN_PROCESS:
+                self.status = WtbBrandUpdateLog.SUCCESS
+                self.entity_count = cache.get(f"{self._caching_key()}_entity_count")
+                self.save()
+
+    def save_with_error(self, logger, discovery_url=None):
+        self.status = WtbBrandUpdateLog.ERROR
+        self.save()
+        payload = {
+            "message": f"Error: {traceback.format_exc()}",
+            "wtb_update_log_id": self.id,
+            "discovery_url": discovery_url,
+        }
+        logger.error(json.dumps(payload))
+
+    def _caching_key(self):
+        return f"WTB_UPDATE_LOG_{self.id}"
 
     class Meta:
         ordering = ("brand", "-last_updated")
