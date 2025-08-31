@@ -624,6 +624,7 @@ class Product(models.Model):
 - No incluyas imagenes o tablas
 - La ficha va ser usada para el mercado de Chile, asume que el producto va a ser utilizado en ese país
 - No es necesario incluir información de compatibilidad eléctrica
+- No incluir información de la garantía
 
 ## Input del usuario:
 
