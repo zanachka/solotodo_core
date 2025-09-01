@@ -21,6 +21,9 @@ class Coupon(models.Model):
     code = models.CharField(max_length=100)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     amount_type = models.IntegerField(choices=AMOUNT_TYPE_CHOICES)
+    max_discount_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True
+    )
 
     def amount_type_text(self):
         return next(x for x in self.AMOUNT_TYPE_CHOICES if x[0] == self.amount_type)[1]
@@ -75,11 +78,16 @@ class Coupon(models.Model):
 
     def calculate_price(self, price_value):
         if self.amount_type == self.RAW_AMOUNT:
-            return price_value - self.amount
+            discount = self.amount
         elif self.amount_type == self.PERCENTAGE:
-            return price_value - price_value * (self.amount / Decimal(100))
+            discount = price_value * (self.amount / Decimal(100))
         else:
-            raise Exception("Invalid amoutn type")
+            raise Exception("Invalid amount type")
+
+        if self.max_discount_amount and discount > self.max_discount_amount:
+            discount = self.max_discount_amount
+
+        return price_value - discount
 
     @classmethod
     def apply_all_coupons(cls):
