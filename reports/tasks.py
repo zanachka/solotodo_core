@@ -23,7 +23,6 @@ from solotodo.models import SoloTodoUser, EsProduct
 @shared_task(queue="reports", ignore_result=True, task_time_limit=1800)
 def send_current_prices_task(user_ids, query_string):
     try:
-        print("send")
         report = Report.objects.get(slug="current_prices")
         users = [SoloTodoUser.objects.get(pk=user_id) for user_id in user_ids]
         user = users[0]
@@ -70,7 +69,6 @@ def send_current_prices_task(user_ids, query_string):
 @shared_task(queue="reports", ignore_result=True, task_time_limit=1800)
 def send_groceries_current_prices_task(user_ids, query_string):
     try:
-        print("send")
         report = Report.objects.get(slug="groceries_current_prices")
         users = [SoloTodoUser.objects.get(pk=user_id) for user_id in user_ids]
         user = users[0]

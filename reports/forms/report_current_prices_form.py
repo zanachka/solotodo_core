@@ -143,7 +143,7 @@ class ReportCurrentPricesForm(forms.Form):
         filename = timezone.now().strftime(filename_template)
 
         path = storage.save("reports/{}.xlsx".format(filename), file_for_upload)
-        print(storage.url(path), 99)
+        print(storage.url(path))
 
         return {"file": file_value, "filename": filename, "path": path}
 
