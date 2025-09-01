@@ -63,7 +63,6 @@ class ReportCurrentPricesForm(forms.Form):
             return self.fields["stores"].queryset
 
     def generate_report(self):
-        print("ok")
         category = self.cleaned_data["category"]
         stores = self.cleaned_data["stores"]
         products = self.cleaned_data["products"]
