@@ -7,6 +7,9 @@ from rest_framework.response import Response
 from reports.forms.pc_factory_sku_analysis_form import PcFactorySkuAnalysisForm
 from reports.forms.report_current_prices_form import ReportCurrentPricesForm
 from reports.forms.report_daily_prices_form import ReportDailyPricesForm
+from reports.forms.report_groceries_current_prices_form import (
+    ReportGroceriesCurrentPricesForm,
+)
 from reports.forms.report_mercadolibre_chile_catalog_form import (
     ReportMercadoLibreChileCatalogForm,
 )
@@ -25,6 +28,7 @@ from reports.serializers import ReportSerializer
 from reports.tasks import (
     send_daily_prices_task,
     send_current_prices_task,
+    send_groceries_current_prices_task,
     send_store_analysis_report_task,
     send_weekly_prices_task,
     send_store_analytics_task,
@@ -54,6 +58,25 @@ class ReportViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"errors": form.errors}, status=status.HTTP_400_BAD_REQUEST)
 
         send_current_prices_task.delay([user.id], request.META["QUERY_STRING"])
+
+        return Response({"message": "ok"}, status=status.HTTP_200_OK)
+
+    @action(detail=False)
+    def groceries_current_prices(self, request):
+        report = Report.objects.get(slug="groceries_current_prices")
+        user = request.user
+
+        if not user.has_perm("view_report", report):
+            raise PermissionDenied
+
+        form = ReportGroceriesCurrentPricesForm(request.user, request.GET)
+
+        if not form.is_valid():
+            return Response({"errors": form.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        send_groceries_current_prices_task.delay(
+            [user.id], request.META["QUERY_STRING"]
+        )
 
         return Response({"message": "ok"}, status=status.HTTP_200_OK)
 

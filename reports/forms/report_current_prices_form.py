@@ -63,6 +63,7 @@ class ReportCurrentPricesForm(forms.Form):
             return self.fields["stores"].queryset
 
     def generate_report(self):
+        print("ok")
         category = self.cleaned_data["category"]
         stores = self.cleaned_data["stores"]
         products = self.cleaned_data["products"]
@@ -142,7 +143,7 @@ class ReportCurrentPricesForm(forms.Form):
         filename = timezone.now().strftime(filename_template)
 
         path = storage.save("reports/{}.xlsx".format(filename), file_for_upload)
-        print(storage.url(path))
+        print(storage.url(path), 99)
 
         return {"file": file_value, "filename": filename, "path": path}
 
