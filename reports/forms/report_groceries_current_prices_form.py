@@ -52,10 +52,6 @@ class ReportGroceriesCurrentPricesForm(forms.Form):
                 "store",
             )
             .order_by("product")
-            .annotate(
-                normal_price_usd=F("active_registry__normal_price")
-                / F("currency__exchange_rate")
-            )
         )
 
         product_ids = [x["product"] for x in entities.values("product")]
@@ -84,11 +80,10 @@ class ReportGroceriesCurrentPricesForm(forms.Form):
         worksheet = workbook.add_worksheet()
         date_format = workbook.add_format({"num_format": "yyyy-mm-dd"})
         header_format = workbook.add_format({"bold": True, "font_size": 10})
-        category = Category.objects.get(name="Abarrotes")
+        category = Category.objects.get(pk=settings.GROCERIES_CATEGORY_ID)
         specs_columns = CategoryColumn.objects.filter(
             field__category=category.pk, purpose=settings.REPORTS_PURPOSE_ID
         )
-        specs_columns = specs_columns.filter(is_extended=False)
 
         headers = [
             "Producto",
@@ -99,20 +94,6 @@ class ReportGroceriesCurrentPricesForm(forms.Form):
             "Precio normal",
             "Precio oferta",
             "Nombre en tienda",
-            "Marca",
-            "Modelo comercial",
-            "Unidades",
-            "Contenido neto",
-            "Unidad de medida contenido neto",
-            "Factor de conversión contenido neto",
-            "Grupo",
-            "Ponderación Grupo",
-            "Clase",
-            "Ponderación",
-            "Subclase",
-            "Ponderación Subclase",
-            "INE Producto",
-            "Ponderación INE Producto",
         ]
 
         headers.extend([column.field.label for column in specs_columns])
@@ -161,68 +142,6 @@ class ReportGroceriesCurrentPricesForm(forms.Form):
 
             # Store name
             worksheet.write(row, col, e.name)
-            col += 1
-
-            instance = e.product.instance_model
-
-            # Brand
-            worksheet.write(row, col, instance.brand_name)
-            col += 1
-
-            # Commercial name
-            worksheet.write(row, col, instance.commercial_model)
-            col += 1
-
-            # Unit count
-            worksheet.write(row, col, instance.unit_count)
-            col += 1
-
-            # Net content
-            worksheet.write(row, col, instance.net_content)
-            col += 1
-
-            # Net content name
-            worksheet.write(row, col, instance.net_content_unit.name)
-            col += 1
-
-            # Net content unit
-            worksheet.write(row, col, instance.net_content_unit.conversion_rate)
-            col += 1
-
-            # Group
-            worksheet.write(
-                row, col, instance.subcategory.subclass.ine_class.group.name
-            )
-            col += 1
-
-            # Group weight
-            worksheet.write(
-                row, col, instance.subcategory.subclass.ine_class.group.weight
-            )
-            col += 1
-
-            # Class
-            worksheet.write(row, col, instance.subcategory.subclass.ine_class.name)
-            col += 1
-
-            # Class weight
-            worksheet.write(row, col, instance.subcategory.subclass.ine_class.weight)
-            col += 1
-
-            # Sub class
-            worksheet.write(row, col, instance.subcategory.subclass.name)
-            col += 1
-
-            # Sub class weight
-            worksheet.write(row, col, instance.subcategory.subclass.weight)
-            col += 1
-
-            # Ine product
-            worksheet.write(row, col, instance.subcategory.name)
-            col += 1
-
-            # Ine product weight
-            worksheet.write(row, col, instance.subcategory.weight)
             col += 1
 
             for column in specs_columns:
