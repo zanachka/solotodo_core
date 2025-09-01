@@ -5,7 +5,6 @@ from django import forms
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db.models import Q
-from django.db.models import F
 from django.utils import timezone
 from guardian.shortcuts import get_objects_for_user
 
@@ -41,9 +40,11 @@ class ReportGroceriesCurrentPricesForm(forms.Form):
 
     def generate_report(self):
         stores = self.cleaned_data["stores"]
-        entities_filter = Q(product__isnull=False) & Q(store__in=stores)
+        category = Category.objects.get(pk=settings.GROCERIES_CATEGORY_ID)
         entities = (
-            Entity.objects.filter(entities_filter)
+            Entity.objects.filter(
+                product__isnull=False, store__in=stores, category=category
+            )
             .get_available()
             .select_related(
                 "product__instance_model",
