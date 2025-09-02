@@ -318,7 +318,14 @@ class ProductVideoAdmin(admin.ModelAdmin):
 
 @admin.register(Coupon)
 class CouponModelAdmin(admin.ModelAdmin):
-    list_display = ["id", "store", "amount", "amount_type_text", "max_discount_amount"]
+    list_display = [
+        "id",
+        "store",
+        "code",
+        "amount",
+        "amount_type_text",
+        "max_discount_amount",
+    ]
     readonly_fields = [
         "entities",
     ]
