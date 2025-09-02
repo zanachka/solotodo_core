@@ -208,7 +208,13 @@ class BundleModelSerializer(serializers.ModelSerializer):
 class CouponSerializer(serializers.ModelSerializer):
     class Meta:
         model = Coupon
-        fields = ["code", "amount", "amount_type", "amount_type_text"]
+        fields = [
+            "code",
+            "amount",
+            "amount_type",
+            "amount_type_text",
+            "max_discount_amount",
+        ]
 
 
 class CategorySerializer(serializers.HyperlinkedModelSerializer):
