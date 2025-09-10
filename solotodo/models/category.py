@@ -175,7 +175,7 @@ class Category(models.Model):
         # GPT limits the number of enum choices to 1000 in total, and some of our fields have more choices than that
         # Manually set a list of models with high cardinality to low priority and limit their choices to whatever is
         # left after considering the normal priority ones
-        low_priority_models = ["TelevisionFamily"]
+        low_priority_models = ["TelevisionFamily", "WearableBaseModel"]
         low_priority_models_found = []
         non_primitive_field_choices = {}
         available_enum_choices = 1000
