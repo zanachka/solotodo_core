@@ -347,10 +347,14 @@ class ReportDownloadViewSet(viewsets.ReadOnlyModelViewSet):
             return qs.filter(user=user)
 
     @action(detail=True)
-    def download(self, *args, **kwargs):
+    def download_url(self, *args, **kwargs):
         download = self.get_object()
         if download.file:
-            return HttpResponseRedirect(download.file.url)
+            return Response(
+                {
+                    "url": download.file.url,
+                }
+            )
         else:
             return Response(
                 {"errors": "Report does not have an associated file"},
