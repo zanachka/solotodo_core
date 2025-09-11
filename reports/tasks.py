@@ -67,11 +67,10 @@ def send_current_prices_task(user_ids, query_string):
 
 
 @shared_task(queue="reports", ignore_result=True, task_time_limit=1800)
-def send_groceries_current_prices_task(user_ids, query_string):
+def send_groceries_current_prices_task(user_id, query_string, report_download_id):
+    report_download = ReportDownload.objects.get(pk=report_download_id)
     try:
-        report = Report.objects.get(slug="groceries_current_prices")
-        users = [SoloTodoUser.objects.get(pk=user_id) for user_id in user_ids]
-        user = users[0]
+        user = SoloTodoUser.objects.get(pk=user_id)
         q_dict = QueryDict(query_string)
 
         form = ReportGroceriesCurrentPricesForm(user, q_dict)
@@ -83,13 +82,15 @@ def send_groceries_current_prices_task(user_ids, query_string):
         report_file = report_data["file"]
         report_path = report_data["path"]
 
-        ReportDownload.objects.create(report=report, user=user, file=report_path)
+        report_download.file = report_path
+        report_download.status = ReportDownload.SUCCESS
+        report_download.save()
 
         sender = SoloTodoUser().get_bot().email_recipient_text()
         message = "Se adjunta el reporte de precios actuales"
         subject = "Reporte precios actuales abarrotes - %Y-%m-%d"
         subject = timezone.now().strftime(subject)
-        email = EmailMessage(subject, message, sender, [x.email for x in users])
+        email = EmailMessage(subject, message, sender, [user.email])
         email.attach(
             report_filename,
             report_file,
@@ -98,6 +99,8 @@ def send_groceries_current_prices_task(user_ids, query_string):
 
         email.send()
     except Exception as e:
+        report_download.status = ReportDownload.ERROR
+        report_download.save()
         traceback.print_exc()
 
 

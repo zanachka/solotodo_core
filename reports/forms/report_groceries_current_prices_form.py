@@ -4,7 +4,6 @@ import xlsxwriter
 from django import forms
 from django.conf import settings
 from django.core.files.base import ContentFile
-from django.db.models import Q
 from django.utils import timezone
 from guardian.shortcuts import get_objects_for_user
 

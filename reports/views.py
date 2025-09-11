@@ -1,3 +1,4 @@
+from django.http import HttpResponseRedirect
 from guardian.shortcuts import get_objects_for_user
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -24,7 +25,8 @@ from reports.forms.report_wtb_form import ReportWtbForm
 from reports.forms.report_soicos_conversions import ReportSoicosConversions
 from reports.forms.report_wtb_prices_form import ReportWtbPricesForm
 from reports.models import Report, ReportDownload
-from reports.serializers import ReportSerializer
+from reports.pagination import ReportDownloadPagination
+from reports.serializers import ReportSerializer, ReportDownloadSerializer
 from reports.tasks import (
     send_daily_prices_task,
     send_current_prices_task,
@@ -74,8 +76,9 @@ class ReportViewSet(viewsets.ReadOnlyModelViewSet):
         if not form.is_valid():
             return Response({"errors": form.errors}, status=status.HTTP_400_BAD_REQUEST)
 
+        report_download = ReportDownload.objects.create(report=report, user=user)
         send_groceries_current_prices_task.delay(
-            [user.id], request.META["QUERY_STRING"]
+            user.id, request.META["QUERY_STRING"], report_download.id
         )
 
         return Response({"message": "ok"}, status=status.HTTP_200_OK)
@@ -325,3 +328,31 @@ class ReportViewSet(viewsets.ReadOnlyModelViewSet):
         )
 
         return Response({"message": "ok"}, status=status.HTTP_200_OK)
+
+
+class ReportDownloadViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = ReportDownload.objects.all()
+    serializer_class = ReportDownloadSerializer
+    pagination_class = ReportDownloadPagination
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = ReportDownload.objects.select_related("user", "report")
+
+        if not user.is_authenticated:
+            return qs.none()
+        if user.is_superuser:
+            return qs
+        else:
+            return qs.filter(user=user)
+
+    @action(detail=True)
+    def download(self, *args, **kwargs):
+        download = self.get_object()
+        if download.file:
+            return HttpResponseRedirect(download.file.url)
+        else:
+            return Response(
+                {"errors": "Report does not have an associated file"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
