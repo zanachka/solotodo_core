@@ -1220,7 +1220,7 @@ class Entity(models.Model):
 
     class Meta:
         app_label = "solotodo"
-        ordering = ("creation_date",)
+        ordering = ("id",)
         unique_together = ("store", "key")
         permissions = [
             ("backend_list_entities", "Can view entity list in backend"),
