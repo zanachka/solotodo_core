@@ -859,12 +859,15 @@ class Entity(models.Model):
             return {}, errors
 
         tagging_prompt = ChatPromptTemplate.from_template(
-            """
+            f"""
             Determine the specifications of the product described in the following JSON document. 
             The field 'description' is in Markdown format. 
             Use UTF-8 characters for string values in the JSON response and never use escape characters.
             
-            {input}
+            {self.category.ai_additional_prompt_instructions_for_similarity_search or ''}
+            
+            {self.ai_get_input()}
+            
             """
         )
 
