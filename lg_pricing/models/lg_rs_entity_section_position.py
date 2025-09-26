@@ -33,6 +33,7 @@ class LgRsEntitySectionPosition(models.Model):
     sku = models.CharField(max_length=256, blank=True, null=True)
     url = models.URLField(max_length=512)
     is_sponsored = models.BooleanField(default=False)
+    seller = models.CharField(max_length=256, blank=True, null=True)
 
     def str(self):
         return self.id
@@ -133,6 +134,7 @@ class LgRsEntitySectionPosition(models.Model):
                     entity.url,
                     latest_position,
                     entry["is_sponsored"],
+                    entity.seller,
                 ]
             )
 
