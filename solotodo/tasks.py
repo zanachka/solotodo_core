@@ -173,13 +173,13 @@ def store_category_update_pricing(
     logger = logging.getLogger("logstash")
     update_log = StoreUpdateLog.objects.get(pk=update_log_id)
     print(f"Category {category} Update Pricing retry # {self.request.retries}")
+    store = Store.objects.get(pk=store_id)
 
     try:
         with memcached_site_limit(
             f"{store_id}_discover_entries",
             limit=discover_urls_concurrency,
         ):
-            store = Store.objects.get(pk=store_id)
             store.update_pricing_category(
                 category,
                 products_for_url_concurrency,
@@ -192,7 +192,9 @@ def store_category_update_pricing(
 
         try:
             with memcached_retry_tracker(cache_key, MAX_RETRIES):
-                raise self.retry(exc=e, countdown=3)
+                raise self.retry(
+                    exc=e, countdown=store.scraper.celery_task_retry_countdown
+                )
         except RetryLimitExceeded:
             update_log.save_with_error(logger)
 
@@ -231,13 +233,13 @@ def store_create_or_update_entity_from_discovery_url(
     print(f"Create or update entity retry # {self.request.retries}")
     update_log = StoreUpdateLog.objects.get(pk=update_log_id)
     logger = logging.getLogger("logstash")
+    store = Store.objects.get(pk=store_id)
 
     try:
         with memcached_site_limit(
             f"{store_id}_products_for_url",
             limit=products_for_url_concurrency,
         ):
-            store = Store.objects.get(pk=store_id)
             category = Category.objects.get(pk=category_id)
             store.create_or_update_entity_from_discovery_url(
                 update_log, discovery_url, category, extra_args
@@ -247,7 +249,11 @@ def store_create_or_update_entity_from_discovery_url(
 
         try:
             with memcached_retry_tracker(cache_key, MAX_RETRIES):
-                raise self.retry(exc=e, countdown=3, max_retries=MAX_RETRIES)
+                raise self.retry(
+                    exc=e,
+                    countdown=store.scraper.celery_task_retry_countdown,
+                    max_retries=MAX_RETRIES,
+                )
         except RetryLimitExceeded:
             update_log.save_with_error(logger, discovery_url)
     except StoreScrapError as e:
