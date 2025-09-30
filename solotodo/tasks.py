@@ -336,3 +336,19 @@ def store_update_individual_section_positions(
 def ai_update_product_fields(product_id, fields=None):
     product = Product.objects.get(pk=product_id)
     product.update_ai_fields(fields)
+
+
+@shared_task(queue="general", ignore_result=True, max_retries=3, countdown=3)
+def ai_entity_fix_grocery_subcategory(entity_id):
+    entity = Entity.objects.get(pk=entity_id)
+    inferred_product_data = entity.ai_infer_product_data()[0]
+    inferred_subcategory = InstanceModel.objects.get(
+        unicode_representation=inferred_product_data["subcategory"], model=1702
+    )
+    im = entity.product.instance_model
+    if im.subcategory != inferred_subcategory:
+        print(entity.name, im.subcategory, "->", inferred_subcategory)
+        im.subcategory = inferred_subcategory
+        im.save()
+    else:
+        print(entity.name, "No changes found:", im.subcategory)

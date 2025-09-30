@@ -864,9 +864,9 @@ class Entity(models.Model):
             The field 'description' is in Markdown format. 
             Use UTF-8 characters for string values in the JSON response and never use escape characters.
             
-            {self.category.ai_additional_prompt_instructions_for_similarity_search or ''}
-            
-            {self.ai_get_input()}
+            {self.category.ai_additional_prompt_instructions_for_product_data_inferring or ''}
+                        
+            {{input}}
             
             """
         )
