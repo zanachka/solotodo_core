@@ -874,25 +874,27 @@ class Entity(models.Model):
         llm = get_llm(llm_model)
         llm_name = llm.get_name()
         if "OpenAI" in llm_name:
-            fields_annotation, fields_enum_choices = (
+            fields_annotations, fields_enum_choices = (
                 self.category.get_openai_fields_annotation()
-            )
-        elif "Anthropic" in llm_name:
-            fields_annotation, fields_enum_choices = (
-                self.category.get_anthropic_fields_annotation()
             )
         else:
             raise Exception("Unsupported LLM model")
-        Classification = create_model("Classification", **fields_annotation)
-        llm = llm.with_structured_output(Classification)
-        prompt = tagging_prompt.invoke({"input": self.ai_get_input()})
-        try:
-            response = dict(llm.invoke(prompt))
-        except Exception as e:
-            return {}, {"general": str(e)}
+
+        response = {}
+        fields_annotation_dict = {}
+
+        for fields_annotation in fields_annotations:
+            Classification = create_model("Classification", **fields_annotation)
+            structured_llm = llm.with_structured_output(Classification)
+            prompt = tagging_prompt.invoke({"input": self.ai_get_input()})
+            try:
+                response.update(structured_llm.invoke(prompt))
+            except Exception as e:
+                return {}, {"general": str(e)}
+            fields_annotation_dict.update(fields_annotation)
 
         for field, value in response.items():
-            field_data = fields_annotation[field][1]
+            field_data = fields_annotation_dict[field][1]
             is_optional = field_data.default is None
             field_enum_choices = fields_enum_choices.get(field, None)
 

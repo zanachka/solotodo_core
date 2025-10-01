@@ -165,7 +165,24 @@ class Category(models.Model):
         return fields_annotation, fields_enum_choices
 
     def get_openai_fields_annotation(self):
-        fields_annotation = {}
+        non_primitive_field_choices = {}
+        field_names = []
+
+        for field in self.meta_model.fields.select_related("model"):
+            field_names += field.name
+            if field.model.is_primitive():
+                continue
+            enum_choices = list(
+                field.model.instancemodel_set.order_by("-pk").values_list(
+                    "unicode_representation", flat=True
+                )[:1000]
+            )
+            non_primitive_field_choices[field.model.id] = enum_choices
+
+        fields_annotations = []
+        current_fields_annotation = {}
+        used_enum_values = 0
+
         fields_enum_choices = {}
         field_types = {
             "CharField": str,
@@ -173,41 +190,6 @@ class Category(models.Model):
             "BooleanField": bool,
             "DecimalField": float,
         }
-
-        # GPT limits the number of enum choices to 1000 in total, and some of our fields have more choices than that
-        # Manually set a list of models with high cardinality to low priority and limit their choices to whatever is
-        # left after considering the normal priority ones
-        low_priority_models = ["TelevisionFamily", "WearableBaseModel"]
-        low_priority_models_found = []
-        non_primitive_field_choices = {}
-        available_enum_choices = 1000
-
-        for field in self.meta_model.fields.select_related("model"):
-            if field.model.is_primitive():
-                continue
-            if field.model.name in low_priority_models:
-                low_priority_models_found.append(field.model.name)
-                continue
-            enum_choices = list(
-                field.model.instancemodel_set.all().values_list(
-                    "unicode_representation", flat=True
-                )
-            )
-            available_enum_choices -= len(enum_choices)
-            non_primitive_field_choices[field.model.id] = enum_choices
-
-        if low_priority_models_found:
-            low_priority_instances_limit = max(
-                available_enum_choices // len(low_priority_models_found), 0
-            )
-            for low_priority_model_found in low_priority_models_found:
-                model = MetaModel.objects.get(name=low_priority_model_found)
-                enum_choices = list(
-                    model.instancemodel_set.order_by("-pk")[
-                        :low_priority_instances_limit
-                    ].values_list("unicode_representation", flat=True)
-                )
-                non_primitive_field_choices[model.id] = enum_choices
 
         for field in self.meta_model.fields.select_related("model"):
             model_name = field.model.name
@@ -223,6 +205,14 @@ class Category(models.Model):
                 field_type = field_types[model_name]
             else:
                 enum_choices = non_primitive_field_choices[field.model.id]
+
+                if len(enum_choices) + used_enum_values > 1000:
+                    fields_annotations.append(current_fields_annotation)
+                    current_fields_annotation = {}
+                    used_enum_values = 0
+
+                used_enum_values += len(enum_choices)
+
                 # OpenAI doesn't like double quotes, change then to single quotes
                 field_type = Literal.__getitem__(
                     tuple([x.replace('"', "'") for x in enum_choices])
@@ -235,23 +225,25 @@ class Category(models.Model):
             if field.nullable:
                 field_type = Optional.__getitem__(field_type)
 
-            fields_annotation[field.name] = (
+            current_fields_annotation[field.name] = (
                 field_type,
                 field_data,
             )
 
-        if "commercial_model" not in fields_annotation:
-            fields_annotation["commercial_model"] = (
+        fields_annotations.append(current_fields_annotation)
+
+        if "commercial_model" not in field_names:
+            fields_annotations[0]["commercial_model"] = (
                 str,
                 Field(description="Modelo comercial, sin incluir marca"),
             )
-        if "brand" not in fields_annotation:
-            fields_annotation["brand"] = (
+        if "brand" not in field_names:
+            fields_annotations[0]["brand"] = (
                 str,
                 Field(description="Marca del producto"),
             )
 
-        return fields_annotation, fields_enum_choices
+        return fields_annotations, fields_enum_choices
 
     def is_ai_managed(self):
         return bool(self.ai_confidence_threshold_for_association)
