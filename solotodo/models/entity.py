@@ -20,7 +20,7 @@ from PIL import Image, UnidentifiedImageError
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain_core.prompts import ChatPromptTemplate
-from pyzbar.pyzbar import decode
+import zxingcpp
 from pydantic import Field, create_model
 
 from .solotodo_user import SoloTodoUser
@@ -766,19 +766,18 @@ class Entity(models.Model):
             response = session.get(picture_url, timeout=10)
             if response.status_code != 200:
                 continue
-            image = Image.open(io.BytesIO(response.content))
-            decoded_qr_codes = decode(image)
-            for decoded_qr_code in decoded_qr_codes:
-                if decoded_qr_code.type != "QRCODE":
-                    continue
-                qr_url = decoded_qr_code.data.decode("UTF-8")
-                qr_code_match = re.match(
-                    r"https://ww6.sec.cl/qr/qr.do\?a=prod&i=(\d+)$", qr_url
-                )
-                if not qr_code_match:
-                    continue
-                qr_code = str(int(qr_code_match.groups()[0]))
-                qr_codes.add(qr_code)
+            image = Image.open(io.BytesIO(response.content)).convert("RGB")
+            decoded_qr_code = zxingcpp.read_barcode(image)
+            if not decoded_qr_code:
+                continue
+            qr_url = decoded_qr_code.text
+            qr_code_match = re.match(
+                r"https://ww6.sec.cl/qr/qr.do\?a=prod&i=(\d+)$", qr_url
+            )
+            if not qr_code_match:
+                continue
+            qr_code = str(int(qr_code_match.groups()[0]))
+            qr_codes.add(qr_code)
 
         if qr_codes:
             sec_qr_codes = ",".join(qr_codes)
