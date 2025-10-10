@@ -187,6 +187,12 @@ class StoreSerializer(serializers.HyperlinkedModelSerializer):
         )
 
 
+class StoreWithSiiDetailsSerializer(StoreSerializer):
+    class Meta:
+        model = Store
+        fields = StoreSerializer.Meta.fields + ("sii_rut", "sii_razon_social")
+
+
 class BundleSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = Bundle

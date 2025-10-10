@@ -16,6 +16,7 @@ from django.utils import timezone
 from django_filters import rest_framework
 from elasticsearch_dsl import Search
 from geoip2.errors import AddressNotFoundError
+from guardian.shortcuts import get_objects_for_user
 from guardian.utils import get_anonymous_user
 from rest_framework import viewsets, permissions, status, mixins
 from rest_framework.decorators import action
@@ -180,6 +181,7 @@ from solotodo.serializers import (
     EntityAiNestedProductSerializer,
     StoreSectionPositionsUpdateLogSerializer,
     SubcategorySerializer,
+    StoreWithSiiDetailsSerializer,
 )
 from solotodo.tasks import send_historic_entity_positions_report_task
 from solotodo.utils import get_client_ip, iterable_to_dict
@@ -709,6 +711,12 @@ class StoreViewSet(PermissionReadOnlyModelViewSet):
         report_url = storage.url(path)
 
         return Response({"url": report_url})
+
+    @action(detail=False)
+    def sii_details(self, request, *args, **kwargs):
+        stores = get_objects_for_user(request.user, "view_store_sii_details", Store)
+        serializer = StoreWithSiiDetailsSerializer(stores, many=True, context={'request': request})
+        return Response(serializer.data)
 
 
 class StoreUpdateLogViewSet(viewsets.ReadOnlyModelViewSet):
