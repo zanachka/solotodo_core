@@ -715,7 +715,9 @@ class StoreViewSet(PermissionReadOnlyModelViewSet):
     @action(detail=False)
     def sii_details(self, request, *args, **kwargs):
         stores = get_objects_for_user(request.user, "view_store_sii_details", Store)
-        serializer = StoreWithSiiDetailsSerializer(stores, many=True, context={'request': request})
+        serializer = StoreWithSiiDetailsSerializer(
+            stores, many=True, context={"request": request}
+        )
         return Response(serializer.data)
 
 

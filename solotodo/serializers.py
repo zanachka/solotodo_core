@@ -476,6 +476,8 @@ class EntityWithoutDescriptionSerializer(EntitySerializer):
             "creation_date",
             "last_updated",
             "last_pricing_update",
+            "review_count",
+            "review_avg_score",
         )
 
 
